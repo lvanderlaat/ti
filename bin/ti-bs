@@ -1,0 +1,125 @@
+#!/usr/bin/env python
+
+
+"""
+Average results from station-independent tremor inversions using bootstrapping.
+"""
+
+
+# Python Standard Library
+import os
+
+from itertools import repeat
+from multiprocessing import Pool, cpu_count
+
+# Other dependencies
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import xarray as xr
+
+# Local files
+import config
+import plot
+import bootstrap
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def plot_prob(d, p):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xlabel('Source-receiver distance [m]')
+    ax.set_ylabel('Probability')
+    ax.scatter(d, p)
+    ax.grid('on')
+    return fig
+
+
+def load_df(folderpath, filename):
+    return pd.read_csv(
+        os.path.join(folderpath, filename),
+        parse_dates=True,
+        index_col='datetime'
+    )
+
+
+def sample(_, a, p):
+    return np.mean(np.random.choice(a=a, size=len(a), p=p))
+
+
+def main():
+    channels = pd.read_csv(channels_csv, comment='/')
+    channels = channels[channels.channel.isin('HHZ EHZ'.split())]
+    channels['distance'] = np.sqrt((x-channels.x)**2 + (y-channels.y)**2)
+    channels.sort_values(by='distance', inplace=True, ignore_index=True)
+    proximity = 1 / channels.distance / channels.distance.max()
+    # proximity += 1
+    p = (proximity / proximity.sum()).values
+    p = [1/len(channels)]*len(channels)
+
+    fig = plot_prob(channels.distance, p)
+    fig.savefig(os.path.join(folderpath, 'probability.png'), dpi=250)
+
+    data = []
+    for i, row in channels.iterrows():
+        _folderpath = os.path.join(folderpath, f'GA_{row.station}')
+        df = load_df(_folderpath, filename)
+        t = df.index.tolist()
+        c = config.read(os.path.join(_folderpath, 'config.json'))
+        keys = [k for k, v in dict(c.model).items() if type(v) is list]
+
+        keys.remove('Qf')
+
+        data.append(df[keys].values)
+    data = np.array(data)
+
+    data = xr.DataArray(
+        data,
+        dims=('station', 't', 'parameter'),
+        coords=dict(station=channels.station, t=t, parameter=keys)
+    )
+
+    pool = Pool(cpu_count())
+    avgs, stds = [], []
+    for key in keys:
+        print(key)
+        avg, std = [], []
+        for _t in t:
+            _data = data.sel(parameter=key, t=_t).data
+
+            args_parallel = zip(range(N), repeat(_data), repeat(p))
+            means = pool.starmap(sample, args_parallel)
+            avg.append(np.mean(means))
+            std.append(np.std(means))
+
+        avgs.append(avg)
+        stds.append(std)
+
+    avgs = np.array(avgs)
+    stds = np.array(stds)
+    avg = pd.DataFrame(avgs.T, columns=keys, index=t)
+    std = pd.DataFrame(stds.T, columns=keys, index=t)
+
+    avg.to_csv(os.path.join(folderpath, 'bs_sta_avg.csv'))
+    std.to_csv(os.path.join(folderpath, 'bs_sta_std.csv'))
+
+    # avg, std = bootstrap.moving_block(
+    #     avg, c.post.window, int(c.post.n), cpu_count()
+    # )
+
+    fig = plot.param_timeseries(avg, std, c)
+    fig.savefig(os.path.join(folderpath, 'bs_sta.png'), dpi=300)
+    return
+
+
+if __name__ == '__main__':
+    x, y = 523500, 63800
+    channels_csv = './example/channels.csv'
+    folderpath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA_all_sta_Pex_var/'
+    filename = 'param.csv'
+    # filename = 'bs_avg.csv'
+    N = int(1e3)
+    main()

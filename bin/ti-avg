@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+
+
+"""
+Average station-independent optimization results.
+"""
+
+
+# Python Standard Library
+import os
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+import xarray as xr
+
+# Local files
+import config
+import utils
+import plot
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+filename_avg = 'bs_avg.csv' # TODO must be a constant across all scripts
+filename_std = 'bs_std.csv' # TODO must be a constant across all scripts
+
+
+def load_df(folderpath, filename):
+    return pd.read_csv(
+        os.path.join(folderpath, filename),
+        parse_dates=True,
+        index_col='datetime'
+    )
+
+
+def main():
+    # args = utils.parse_args()
+    channels = pd.read_csv(channels_csv, comment='/')
+
+    data = []
+    for i, row in channels.iterrows():
+        _folderpath = os.path.join(folderpath, f'GA_{row.station}')
+
+        configfile = os.path.join(_folderpath, 'config.json')
+        c = config.read(configfile)
+
+        df = load_df(_folderpath, filename_avg)
+        t = df.index.tolist()
+        data.append(df.values)
+
+
+    keys = [key for key, value in dict(c.model).items() if type(value) is list]
+
+    data = np.array(data)
+
+    data = xr.DataArray(
+        data,
+        dims=('station', 't', 'parameter'),
+        coords=dict(station=channels.station, t=t, parameter=keys)
+    )
+
+    avg, std = [], []
+    for key in keys:
+        _data = data.sel(parameter=key)
+        avg.append(_data.mean(axis=0))
+        std.append(_data.std(axis=0))
+
+    avg = pd.DataFrame(np.array(avg).T, index=t, columns=keys)
+    std = pd.DataFrame(np.array(std).T, index=t, columns=keys)
+
+    avg.drop(axis=1, labels='Qf', inplace=True)
+    std.drop(axis=1, labels='Qf', inplace=True)
+
+    fig = plot.param_timeseries(avg, std, c)
+    fig.savefig(os.path.join(folderpath, 'param_timeseries_all_sta.png'), dpi=300)
+    return
+
+
+if __name__ == '__main__':
+    # folderpath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA_all_sta_Pex_fix'
+    folderpath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA_all_sta_Pex_var'
+    channels_csv = 'example/channels.csv'
+    main()

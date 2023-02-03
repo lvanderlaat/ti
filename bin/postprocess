@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+
+
+"""
+Synthetize tremor (Girona et al., 2019) from a table of parameters.
+
+"""
+
+
+# Python Standard Library
+import datetime
+import os
+
+from itertools import repeat
+from multiprocessing import Pool, cpu_count
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from scipy import signal
+from scipy.stats import bootstrap
+
+# Local files
+import bootstrap
+import config
+import model
+import optimize
+import plot
+import utils
+
+
+__author__ = 'Leonardo van der Laat'
+__email__  = 'laat@umich.edu'
+
+
+def main():
+    # Configuration
+    c = config.read(configfile, filetype='json')
+
+    # Parameters to estimate
+    estimated = [key for key, value in c.model.items() if type(value) is list]
+
+    # Output
+    output_dir = os.path.split(configfile)[0]
+    folderpath = utils.create_folder(output_dir, 'POST', True)
+
+    # Ground
+    t, f, Sxx_obs = utils.load_ssam(c.optimize.obs_folder)
+    Sxx_obs = Sxx_obs.T
+
+    # Load parameters
+    df = pd.read_csv(filepath, parse_dates=True, index_col='datetime')
+    # df = df.drop(labels='error ed r'.split(), axis=1)
+    df = df.drop(labels='error'.split(), axis=1)
+
+    # Bootstrapping
+    # avg, std = bootstrap.moving_block(df[estimated], window, N, cpu_count())
+    # avg.to_csv(os.path.join(output_dir, 'bs_mean.csv'))
+    # std.to_csv(os.path.join(output_dir, 'bs_std.csv'))
+    # fig = plot.param_timeseries(avg, std)
+    # fig.savefig(os.path.join(folderpath, 'param_timeseries.png'), dpi=250)
+
+    # Synthetize
+    args_parallel = zip(df.to_dict('records'))
+    with Pool(cpu_count()) as pool:
+        Sxx_syn = pool.starmap(optimize._synthetize, args_parallel)
+    Sxx_syn = np.array(Sxx_syn)
+
+    # Smoothing filter
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+    Sxx_obs_filt = signal.filtfilt(b, a, Sxx_obs)
+    Sxx_syn_filt = signal.filtfilt(b, a, Sxx_syn)
+
+    # Plot
+    fig = plot.obs_vs_synth(t, f, Sxx_obs_filt.T, Sxx_syn_filt.T)
+    fig.savefig(os.path.join(folderpath, 'comparison.png'), dpi=250)
+    return
+
+
+if __name__ == '__main__':
+    # configfile = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/OPTIMIZATION_VELOCITY/config.json'
+    # filepath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/OPTIMIZATION_VELOCITY/param.csv'
+    N = int(1e4)
+    window = '1D'
+
+    configfile = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/OPTIMIZATION_20221207_110219/config.json'
+    filepath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/OPTIMIZATION_20221207_110219/param.csv'
+    main()

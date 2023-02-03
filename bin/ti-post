@@ -1,0 +1,123 @@
+#!/usr/bin/env python
+
+
+"""
+Synthetize tremor (Girona et al., 2019) from a table of parameters.
+"""
+
+
+# Python Standard Library
+import datetime
+import os
+
+from itertools import repeat
+from multiprocessing import Pool, cpu_count
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+from obspy.signal.filter import bandpass
+from scipy import signal
+from scipy.fft import fft
+from scipy.stats import bootstrap
+
+# Local files
+import bootstrap
+import config
+import model
+import plot
+import utils
+
+
+__author__ = 'Leonardo van der Laat'
+__email__  = 'laat@umich.edu'
+
+
+def synthetize(param, freqmin, freqmax):
+    # Synthetize
+    dPP0, U, A_p, Sxx = model.synthetize(**param)
+
+    # Ground velocity spectrum
+    V = np.gradient(U, 1/param['max_freq'], axis=-1)
+
+    # Filter waveform
+    for i, tr in enumerate(V):
+        V[i] = bandpass(tr, freqmin, freqmax, 2*param['max_freq'])
+
+    # Compute spectrum
+    Sxx_syn = np.abs(fft(V))
+    return Sxx_syn
+
+
+def main():
+    # Configuration
+    c = config.read(configfile, filetype='json')
+
+    # Parameters to estimate
+    estimated = [key for key, value in c.model.items() if type(value) is list]
+
+    # Output
+    output_dir = os.path.split(configfile)[0]
+    folderpath = utils.create_folder(output_dir, 'POST', True)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+
+    # Sort channels based on order in spectra data
+    channels.station = channels.station.astype('category')
+    channels.station = channels.station.cat.set_categories(obs.station)
+    channels = channels.sort_values(['station']).reset_index(drop=True)
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+    _Sxx = signal.filtfilt(b, a, obs)
+    _Sxx *= signal.windows.tukey(_Sxx.shape[2], alpha=0.05)
+    obs.data = _Sxx
+    print(obs.shape)
+
+    # Load parameters
+    df = pd.read_csv(filepath, parse_dates=True, index_col='datetime')
+    df['xr'] = [channels.x.tolist()]*len(df)
+    df['yr'] = [channels.y.tolist()]*len(df)
+    df['zr'] = [channels.z.tolist()]*len(df)
+
+    df_Qf = pd.read_csv(Qf_file, parse_dates=True, index_col='datetime')
+    df['Qf'] = df_Qf.values.tolist()
+
+    # Synthetize
+    args_parallel = zip(
+        df.to_dict('records'),
+        repeat(c.preprocess.freqmin),
+        repeat(c.preprocess.freqmax)
+    )
+    with Pool(cpu_count()) as pool:
+        Sxx_syn = pool.starmap(synthetize, args_parallel)
+    Sxx_syn = np.array(Sxx_syn).reshape(obs.shape)
+    Sxx_syn = signal.filtfilt(b, a, Sxx_syn)
+    Sxx_syn *= signal.windows.tukey(Sxx_syn.shape[2], alpha=0.05)
+    syn = obs.copy()
+    syn.data = Sxx_syn
+
+    for i, row in channels.iterrows():
+        station = row.station
+        Sxx_obs_filt = obs.sel(station=station)
+        Sxx_syn_filt = syn.sel(station=station)
+        fig = plot.obs_vs_synth(
+            obs.t.to_numpy(), obs.f.to_numpy(), Sxx_obs_filt.T, Sxx_syn_filt.T
+        )
+        fig.savefig(os.path.join(folderpath, f'comparison_{station}.png'), dpi=250)
+    return
+
+
+if __name__ == '__main__':
+    configfile = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/MOO/config.json'
+    filepath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/MOO/param.csv'
+    Qf_file = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/MOO/param_Qf.csv'
+    main()

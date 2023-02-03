@@ -1,0 +1,204 @@
+#!/usr/bin/env python
+
+
+"""
+"""
+
+
+# Python Standard Library
+import argparse
+import os
+import pprint
+
+from multiprocessing import Pool, cpu_count
+from itertools import repeat
+
+# Other dependencies
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+from pymoo.algorithms.soo.nonconvex.ga import GA
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+from pymoo.termination import get_termination
+from scipy import signal
+
+# Local files
+import bootstrap
+import config
+import filt
+import moo
+import optimization
+import parameters
+import plot
+import synth
+import utils
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('configfile', help='Configuration file path')
+    parser.add_argument('station', help='Station')
+    return parser.parse_args()
+
+
+def main():
+    # Load configuration
+    args = parse_args()
+    c = config.read(args.configfile)
+
+    # Output
+    folderpath = utils.create_folder(
+        c.io.output_dir, f'GA_{args.station}', c.io.overwrite
+    )
+    utils.write_conf(c, folderpath)
+
+    parameters.write_latex(c, folderpath)
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+    channels = channels[channels.station == args.station]
+    channels.to_csv(os.path.join(folderpath, 'channels.csv'), index=False)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+    # obs = obs.isel(t=range(150, 180))
+
+    if c.optimize.test:
+        obs = obs.sel(t=c.optimize.test_time)
+
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+    obs_filt = filt.freq_domain(a, b, obs)
+
+    # Algorithm
+    algorithm = GA(
+        pop_size=c.moo.pop_size,
+        n_offsprings=c.moo.n_offsprings,
+        crossover=SBX(**c.moo.sbx),
+        mutation=PM(**c.moo.pm),
+        eliminate_duplicate=c.moo.eliminate_duplicate
+    )
+
+    # Termination criteria
+    termination = get_termination('n_gen', c.moo.n_gen)
+
+    # Model parameters
+    param = dict(c.model)
+    keys = [key for key, value in param.items() if type(value) is list]
+    param['xr'] = channels.x.tolist()
+    param['yr'] = channels.y.tolist()
+    param['zr'] = channels.z.tolist()
+
+    args_parallel = zip(
+        obs_filt.transpose('t', 'station', 'f'),
+        repeat(param), repeat(keys),
+        repeat(c.preprocess.freqmin), repeat(c.preprocess.freqmax),
+        repeat(a), repeat(b),
+        repeat(c.optimize.top_q), repeat(c.optimize.wmax),
+        repeat(algorithm), repeat(termination),
+        repeat(c.optimize.save_history), repeat(c.optimize.test)
+    )
+    with Pool(cpu_count()) as pool:
+        results = pool.starmap(optimization.optimize, args_parallel)
+
+    param_opt, min_err = [], []
+    for result in results:
+        opt = moo.var_to_dict(param, keys, result.X)
+
+        if c.optimize.save_history:
+            n_evals = np.array([e.evaluator.n_eval for e in result.history])
+            min_err.append(np.array([e.opt[0].F[0] for e in result.history]))
+
+        if c.optimize.test:
+            pprint.pprint(opt, sort_dicts=False)
+
+            if c.optimize.save_history:
+                fig = plot.convergence(n_evals, min_err, lw=2)
+                fig.savefig(os.path.join(folderpath, 'convergence.png'), dpi=250)
+
+            Sx_obs = obs.sel(t=c.optimize.test_time)[0, 0]
+            Sx_obs_s = obs_filt.sel(t=c.optimize.test_time)[0, 0]
+            Sx_syn = synth.synthetize(
+                opt, c.preprocess.freqmin, c.preprocess.freqmax
+            )[0]
+            Sx_syn_s = filt.filter_spectra(Sx_syn, a, b)
+
+            fig = plot.optimized_spectrum(
+                obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, c.optimize.top_q
+            )
+            fig.savefig(
+                os.path.join(folderpath, f'opt_spec.png'),
+                dpi=250
+            )
+            exit()
+
+        opt['Qf'] = opt['Qf'][0]
+        for key in 'xr yr zr'.split():
+            del opt[key]
+        param_opt.append(opt)
+
+    # Plot convergence
+    if c.optimize.save_history:
+        fig = plot.convergence(n_evals, min_err)
+        fig.savefig(os.path.join(folderpath, 'convergence.png'), dpi=250)
+
+    # Output
+    df = pd.DataFrame(param_opt)
+    df['datetime'] = obs.t
+    df.set_index('datetime', inplace=True)
+    df.to_csv(os.path.join(folderpath, 'param.csv'))
+
+    # Post-processing
+    avg, std = bootstrap.moving_block(
+        df[keys], c.post.window, int(c.post.n), cpu_count()
+    )
+    avg.to_csv(os.path.join(folderpath, 'bs_avg.csv'))
+    std.to_csv(os.path.join(folderpath, 'bs_std.csv'))
+    fig = plot.param_timeseries(avg, std, c)
+    fig.savefig(os.path.join(folderpath, 'param_timeseries.png'), dpi=250)
+
+    # Synthetize
+    df['xr'] = [channels.x.tolist()]*len(df)
+    df['yr'] = [channels.y.tolist()]*len(df)
+    df['zr'] = [channels.z.tolist()]*len(df)
+    df['Qf'] = [[row.Qf] for i, row in df.iterrows()]
+
+    args_parallel = zip(
+        df.to_dict('records'),
+        repeat(c.preprocess.freqmin),
+        repeat(c.preprocess.freqmax)
+    )
+    with Pool(cpu_count()) as pool:
+        syn = pool.starmap(synth.synthetize, args_parallel)
+
+    syn = xr.DataArray(
+        syn,
+        dims=('t', 'station', 'f'),
+        coords=dict(t=obs.t, station=obs.station, f=obs.f)
+    ).transpose('station', 't', 'f')
+
+    _Sxx = filt.filter_spectra(syn, a, b)
+    syn_filt = syn.copy()
+    syn_filt.data = _Sxx
+
+    Sxx_obs_filt = obs_filt.sel(station=args.station)
+    Sxx_syn_filt = syn_filt.sel(station=args.station)
+    fig = plot.obs_vs_synth(
+        obs.t.to_numpy(), obs.f.to_numpy(), Sxx_obs_filt.T, Sxx_syn_filt.T
+    )
+    fig.savefig(os.path.join(folderpath, f'comparison.png'), dpi=250)
+    return
+
+
+if __name__ == '__main__':
+    main()

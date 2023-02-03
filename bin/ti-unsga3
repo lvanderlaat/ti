@@ -1,0 +1,315 @@
+#!/usr/bin/env python
+
+
+"""
+Multi-objective optimization parameter estimation
+"""
+
+
+# Python Standard Library
+import os
+import pprint
+
+from itertools import repeat
+from multiprocessing import Pool, cpu_count
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+
+from pymoo.algorithms.moo.unsga3 import UNSGA3
+from pymoo.decomposition.asf import ASF
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+from pymoo.operators.sampling.rnd import FloatRandomSampling
+from pymoo.optimize import minimize
+from pymoo.termination import get_termination
+from pymoo.util.ref_dirs import get_reference_directions
+
+from scipy import signal
+
+# Local files
+import bootstrap
+import config
+import filt
+import moo
+import plot
+import target
+import synth
+import utils
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def optimize(
+    Sxx_obs,                 # Observed data
+    param, keys,             # Model parameters and keys of estimated
+    freqmin, freqmax,        # Time domain filter
+    a, b,                    # Frequency domain filter
+    top_q, wmax,             # Weight function
+    algorithm, termination,  # MOO
+    weights,                 # MCDM weights
+    test,
+    folderpath,
+):
+    print(Sxx_obs.t.values)
+
+    # Weights for euclidean distance measure
+    w = target.weight(Sxx_obs.to_numpy(), top_q, wmax)
+
+    problem = moo.Problem(
+        Sxx_obs=Sxx_obs,
+        param=param,
+        keys=keys,
+        freqmin=freqmin,
+        freqmax=freqmax,
+        a=a,
+        b=b,
+        w=w,
+    )
+
+    result = minimize(
+        problem,
+        algorithm,
+        termination,
+        seed=1,
+        save_history=test,
+        verbose=test,
+    )
+
+    X = result.X  # variables (n_nds, M)
+    F = result.F  # pareto front (n_nds, M)
+
+    # Multi-Criteria Decision Making (MCDM)
+
+    # Normalization
+    approx_ideal = F.min(axis=0)
+    approx_nadir = F.max(axis=0)
+    nF = (F - approx_ideal) / (approx_nadir - approx_ideal)
+
+    # Augmented Scalarization Function (ASF)
+    decomp = ASF()
+    i = decomp.do(nF, 1/weights).argmin()  # Weights divide so, use 1/w
+
+    if test:
+        n_evals = np.array([e.evaluator.n_eval for e in result.history])
+        opt = np.array([e.opt[0].F for e in result.history])
+
+        for j, station in enumerate(Sxx_obs.station):
+            plt.plot(n_evals, opt.T[j], label=station.item(0))
+        plt.ylabel('Misfit')
+        plt.xlabel('Number of iteration')
+        plt.yscale('log')
+        plt.legend()
+        plt.savefig(os.path.join(folderpath, 'convergence.png'), dpi=300)
+
+        plt.figure(figsize=(7, 5))
+        plt.scatter(F[:, 0], F[:, 1], s=30, facecolors='none', edgecolors='blue')
+        plt.scatter(F[i, 0], F[i, 1], marker="x", color="red", s=200)
+        plt.xlabel('Misfit station 1')
+        plt.ylabel('Misfit station 2')
+        plt.savefig(os.path.join(folderpath, 'pareto.png'), dpi=300)
+
+    x = X[i]
+    F = F[i]
+
+    opt = problem.var_to_dict(x)
+    return opt
+
+
+def main():
+    args = utils.parse_args()
+    c = config.read(args.configfile)
+
+    # Output
+    folderpath = utils.create_folder(c.io.output_dir, 'NSGA3', c.io.overwrite)
+    utils.write_conf(c, folderpath)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+    channels.to_csv(os.path.join(folderpath, 'channels.csv'), index=False)
+
+    # Sort channels based on order in spectra data
+    channels.station = channels.station.astype('category')
+    channels.station = channels.station.cat.set_categories(obs.station)
+    channels = channels.sort_values(['station']).reset_index(drop=True)
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+    # obs = obs.isel(t=range(150, 180))
+    if c.optimize.test:
+        obs = obs.sel(t=c.optimize.test_time)
+
+    # Smoothing filter
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+
+    # Back to X-Array
+    obs_filt = obs.copy()
+    obs_filt.data = filt.filter_spectra(obs, a, b)
+
+    ref_dirs = get_reference_directions(
+        'das-dennis', len(channels), n_partitions=8
+    )
+    # ref_dirs = get_reference_directions("energy", len(channels), 250, seed=1)
+    print(len(ref_dirs))
+    assert len(ref_dirs) < c.moo.pop_size
+
+    # Algorithm
+    algorithm = UNSGA3(
+        ref_dirs=ref_dirs,
+        pop_size=c.moo.pop_size,
+        n_offsprings=c.moo.n_offsprings,
+        sampling=FloatRandomSampling(),
+        crossover=SBX(**c.moo.sbx),
+        mutation=PM(**c.moo.pm),
+        eliminate_duplicate=c.moo.eliminate_duplicate
+    )
+
+    # Termination criteria
+    termination = get_termination('n_gen', c.moo.n_gen)
+
+    weights = np.array([1]*len(obs.station))
+
+    param = dict(c.model)
+    keys = [key for key, value in param.items() if type(value) is list]
+    param['xr'] = channels.x.tolist()
+    param['yr'] = channels.y.tolist()
+    param['zr'] = channels.z.tolist()
+
+    # Run sequential
+    # param_opt, Qf = [], []
+    # for i, Sxx_obs in enumerate(obs_filt.transpose('t', 'station', 'f')):
+    #     print(i)
+    #     opt = optimize(
+    #         Sxx_obs,                                    # Observed data
+    #         param, keys,                                # Model parameters
+    #         c.preprocess.freqmin, c.preprocess.freqmax, # Time domain filter
+    #         a, b,                                       # Freq domain filter
+    #         c.optimize.top_q, c.optimize.wmax,          # Weight function
+    #         algorithm, termination,                     # MOO
+    #     )
+    #     param_opt.append(opt)
+    #     Qf.append(opt['Qf'])
+
+    # Run parallel
+    args_parallel = zip(
+        obs_filt.transpose('t', 'station', 'f'),
+        repeat(param), repeat(keys),
+        repeat(c.preprocess.freqmin), repeat(c.preprocess.freqmax),
+        repeat(a), repeat(b),
+        repeat(c.optimize.top_q), repeat(c.optimize.wmax),
+        repeat(algorithm), repeat(termination),
+        repeat(weights), repeat(c.optimize.test), repeat(folderpath)
+    )
+    with Pool(c.max_workers) as pool:
+        param_opt = pool.starmap(optimize, args_parallel)
+
+    # test spectrum match
+    if c.optimize.test:
+        optimal = param_opt[0]
+        Qfs = optimal['Qf']
+        for i, row in channels.iterrows():
+            station = row.station
+
+            optimal['xr'] = [row.x]
+            optimal['yr'] = [row.y]
+            optimal['zr'] = [row.z]
+            optimal['Qf'] = Qfs[i]
+
+            print(station)
+            pprint.pprint(optimal)
+
+            Sx_obs = obs.sel(t=c.optimize.test_time, station=station)[0]
+            Sx_obs_s = obs_filt.sel(t=c.optimize.test_time, station=station)[0]
+            Sx_syn = synth.synthetize(
+                optimal, c.preprocess.freqmin, c.preprocess.freqmax
+            )[0]
+            Sx_syn_s = filt.filter_spectra(Sx_syn, a, b)
+
+            fig = plot.optimized_spectrum(
+                obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, c.optimize.top_q
+            )
+            fig.savefig(
+                os.path.join(folderpath, f'opt_spec_{station}.png'),
+                dpi=250
+            )
+        exit()
+
+    df = pd.DataFrame(param_opt)
+    df.drop(labels='Qf xr yr zr'.split(), axis=1, inplace=True)
+
+    Qf = np.array([opt['Qf'] for opt in param_opt])
+    df_Qf = pd.DataFrame(Qf, columns=obs.station)
+
+    for _df in [df, df_Qf]:
+        _df['datetime'] = obs.t
+        _df.set_index('datetime', inplace=True)
+    df.to_csv(os.path.join(folderpath, 'param.csv'))
+    df_Qf.to_csv(os.path.join(folderpath, 'param_Qf.csv'))
+
+    # Post-processing
+
+    keys.remove('Qf')
+    avg, std = bootstrap.moving_block(
+        df[keys], c.post.window, int(c.post.n), cpu_count()
+    )
+    avg.to_csv(os.path.join(folderpath, 'bs_avg.csv'))
+    std.to_csv(os.path.join(folderpath, 'bs_std.csv'))
+    fig = plot.param_timeseries(avg, std)
+    fig.savefig(os.path.join(folderpath, 'param_timeseries.png'), dpi=250)
+
+    avg, std = bootstrap.moving_block(
+        df_Qf, c.post.window, int(c.post.n), cpu_count()
+    )
+    avg.to_csv(os.path.join(folderpath, 'bs_avg_Qf.csv'))
+    std.to_csv(os.path.join(folderpath, 'bs_std_Qf.csv'))
+    fig = plot.param_timeseries(avg, std)
+    fig.savefig(os.path.join(folderpath, 'param_timeseries_Qf.png'), dpi=250)
+
+    df['xr'] = [channels.x.tolist()]*len(df)
+    df['yr'] = [channels.y.tolist()]*len(df)
+    df['zr'] = [channels.z.tolist()]*len(df)
+
+    df['Qf'] = df_Qf.values.tolist()
+
+    # Synthetize
+    args_parallel = zip(
+        df.to_dict('records'),
+        repeat(c.preprocess.freqmin),
+        repeat(c.preprocess.freqmax)
+    )
+    with Pool(cpu_count()) as pool:
+        syn = pool.starmap(synth.synthetize, args_parallel)
+
+    syn = xr.DataArray(
+        syn,
+        dims=('t', 'station', 'f'),
+        coords=dict(t=obs.t, station=obs.station, f=obs.f)
+    ).transpose('station', 't', 'f')
+
+    syn_filt = syn.copy()
+    syn_filt.data = filt.filter_spectra(syn, a, b)
+
+    for i, row in channels.iterrows():
+        station = row.station
+        Sxx_obs_filt = obs_filt.sel(station=station)
+        Sxx_syn_filt = syn_filt.sel(station=station)
+        fig = plot.obs_vs_synth(
+            obs.t.to_numpy(), obs.f.to_numpy(), Sxx_obs_filt.T, Sxx_syn_filt.T
+        )
+        fig.savefig(
+            os.path.join(folderpath, f'comparison_{station}.png'), dpi=250
+        )
+    return
+
+
+if __name__ == '__main__':
+    main()

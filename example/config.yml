@@ -1,0 +1,70 @@
+io:
+    output_dir: /nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA
+    overwrite: True
+max_workers: 36
+source:
+    wfs_dir        : /nfs/turbo/lsa-zspica/data/Halema/RAW/wfs/
+    inventory_file : /nfs/turbo/lsa-zspica/work/laat/Halema/paper/inventory.xml
+    channels_csv   : example/channels.csv
+    starttime      : '2018-05-05 12:00'
+    endtime        : '2018-05-27 16:00'
+    sampling_rate  : 100.
+preprocess:
+    freqmin: 0.38
+    freqmax: 24
+window:
+    length : 3600
+    overlap: 0.0
+    pad    : 0.05
+optimize:
+    test       : False # Whether to make a single window test
+    test_time  : '2018-05-13T07:30:00.00'
+    # test_time  : '2018-05-25T07:30:00.00'
+    n          : 1.e+3 # Number of Monte Carlo simulations
+    filter     : [2, 0.99] # Butterworth order and normalized frequency
+    wmax       : 1 # Maximum weight for the distance
+    top_q      : 1 
+    obs_folder : /nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/SSAM_MOO/
+    save_history: True
+moo:
+    pop_size: 100
+    n_offsprings: 100
+    sbx:
+        prob: 1
+        eta: 1
+    pm:
+        prob: 1
+        eta: 1
+    n_gen: 30
+    eliminate_duplicate: True
+model:
+    tau      : 50 # duration of simulation [s]
+    max_freq : 25 # nyquist frequency [Hz]
+    # xs       : [521.e+3, 525.e+3] # Cartesian easting  [m]
+    # ys       : [61.e+3, 66.e+3]   # Cartesian northing [m]
+    xs       : 523800           # Cartesian easting  [m]
+    ys       : 63550            # Cartesian northing [m]
+    # zs       : [-1000, 1000]      # Elevation [m]
+    zs       : 0      # Elevation [m]
+    N        : [100, 500] # number of mass impulses
+    mu_g     : 1.e-5 # gas viscosity  [Pa s]
+    T        : 1250 # gas temperature [K]
+    M        : 18.e-3 # molecular weight of gas (water vapor) [kg/mol]
+    Rg       : 8.3145 # ideal gas constant [J/K/mol]
+    Q        : [10, 2000] # mean gas flux [kg/s]
+    R        : [10, 350] # conduit radius [m]
+    # R        : 250 # conduit radius [m]
+    S        : null # conduit section [m^2]
+    D        : [1.e-1, 1.e+1] # gas pocket thickness [m]
+    L        : [10, 1000] # thickness of the cap [m]
+    kappa    : [1.e-9, 1.e-7] # permeability of the cap [m^2]
+    # kappa    : 1.e-8 # permeability of the cap [m^2]
+    phi      : [0.05e-2, 0.1e-2] # porosity of the cap [0 -- 1]
+    # phi      : 1.e-2 # porosity of the cap [0 -- 1]
+    # Pex      : [1.e+5, 6.e+7] # external pressure [Pa]
+    Pex      : 101325 # external pressure [Pa]
+    rho_s    : 2800 # density of the medium of propagation [kg/m^3]
+    Qf       : [1, 150] # quality factor
+post:
+    n: 1.e+4 # Number of bootstrapping samples
+    window: 1D # Moving window length
