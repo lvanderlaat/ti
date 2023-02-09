@@ -87,7 +87,6 @@ def main():
 
     # Filter depending to channels csv file
     obs = obs.where(obs.station.isin(channels.station), drop=True)
-    # obs = obs.isel(t=range(150, 175))
 
     # Take the highest energy window for testing
     if c.optimize.test:
@@ -95,7 +94,7 @@ def main():
 
     n_windows = len(obs.t)
 
-    # Number of Monte-Carlo simulation
+    # Number of Monte-Carlo simulations
     n = int(c.optimize.n)
 
     # Generate samples
@@ -112,7 +111,7 @@ def main():
     _df['zr'] = [channels.z.tolist()]*n
     param = _df.to_dict('records')
 
-    # Smoothing filter
+    # Frequency domain smoothing filter
     b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
     obs_filt = obs.copy()
     # Back to X-Array

@@ -1,3 +1,12 @@
+example/channels.csv
+
+add.sh
+example/channels_unsga3.csv
+log
+run.sh
+run_many.sh
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

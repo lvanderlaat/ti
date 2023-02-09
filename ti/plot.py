@@ -15,17 +15,11 @@ import pandas as pd
 from matplotlib import colors
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from scipy.signal import savgol_filter
-
-
-# Local files
-import model
-import constants
-import parameters
+import ti
 
 
 __author__ = 'Leonardo van der Laat'
-__email__  = 'laat@umich.edu'
+__email__ = 'laat@umich.edu'
 
 
 mm = 1/25.6
@@ -39,7 +33,7 @@ def ssam(
     # Sxx = Sxx/Sxx.max(axis=0)
     rsam = Sxx.mean(axis=0)
 
-    label = f'Ground velocity [m/s]'
+    label = 'Ground velocity [m/s]'
     cbar_label = label
 
     if normalize:
@@ -62,7 +56,6 @@ def ssam(
     ax.set_yscale(yscale)
     ax.set_ylim(1e-1, f.max())
 
-    divider = make_axes_locatable(ax)
     cax = ax.inset_axes([0.0, 1.05, 1, 0.05], transform=ax.transAxes)
     plt.colorbar(im, cax=cax, orientation='horizontal', label=cbar_label)
     cax.xaxis.tick_top()
@@ -82,7 +75,9 @@ def ssam(
     return fig
 
 
-def _ssam(ax, cax, t, f, Sxx, qmin, qmax, lognorm, cmap, label, centered=False):
+def _ssam(
+    ax, cax, t, f, Sxx, qmin, qmax, lognorm, cmap, label, centered=False
+):
     vmin, vmax = np.quantile(Sxx, qmin), np.quantile(Sxx, qmax)
     if centered:
         vabs = max(abs(vmin), abs(vmax))
@@ -98,14 +93,11 @@ def _ssam(ax, cax, t, f, Sxx, qmin, qmax, lognorm, cmap, label, centered=False):
         norm = colors.Normalize(vmin=vmin, vmax=vmax)
 
     im = ax.pcolormesh(t, f, Sxx, norm=norm, cmap=cmap)
-    # ax.contour(t, f, Sxx, norm=norm, levels=[0.5], colors='k')
 
     plt.colorbar(im, cax=cax, label=label)
 
     # ax.set_yscale('log')
-    # ax.set_ylim(1e-1, f.max())
-
-    ax.set_ylim(f.min(), 7)
+    ax.set_ylim(0.1, 6.25)
     return
 
 
@@ -164,7 +156,6 @@ def obs_vs_synth(
     ax3.set_title('SSAM Synthetic')
     ax4.set_title('SSAM Observed-Synthetic')
 
-
     ax1.set_ylabel(label)
     for ax in [ax2, ax3, ax4]:
         ax.set_ylabel('Frequency [Hz]')
@@ -183,7 +174,7 @@ def obs_vs_synth(
     return fig
 
 
-def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, top_q):
+def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s):
     normalize = False
     if normalize:
         Sx_obs /= Sx_obs.max()
@@ -198,22 +189,17 @@ def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, top_q):
     ax.plot(f, Sx_syn, c='r', lw=0.1, label='Synthetic')
 
     # Smooth spectra
-    ax.plot(f, Sx_obs_s, c='k', lw=1.5, label='Smoothed observation', alpha=0.7)
+    ax.plot(
+        f, Sx_obs_s, c='k', lw=1.5, label='Smoothed observation', alpha=0.7
+    )
     ax.plot(f, Sx_syn_s, c='r', lw=1.5, label='Smoothed synthetic', alpha=0.7)
 
-    # ax.axhline(np.quantile(Sx_obs_s, 1-top_q), lw=0.5, ls='--', label='Top-q')
-
-    ax.set_ylabel(f'Ground velocity [m/s]')
+    ax.set_ylabel('Ground velocity [m/s]')
     ax.set_xlabel('Frequency [Hz]')
-    ax.set_xlim(0.1, 25)
+    ax.set_xlim(0.1, 6.25)
     ax.set_xscale('log')
     # ax.set_yscale('log')
     ax.legend()
-
-    # ax1 = ax.twinx()
-    # ax1.plot(f, w, c='gray', alpha=0.5)
-    # ax1.set_xscale('log')
-    # ax1.grid('off')
 
     fig.tight_layout()
     return fig
@@ -225,7 +211,6 @@ def surfaces(df, estimated):
     output_dir = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/OPTIMIZATION/surface/'
     n_params = len(estimated)
 
-    p = df.p
     error = df.error
     df = df[estimated]
 
@@ -243,16 +228,16 @@ def surfaces(df, estimated):
             ax.tricontourf(df[pi], df[pj], error)
             ax.set_xlabel(pi)
             ax.set_ylabel(pj)
-            if pi in constants.log_params:
+            if pi in ti.constants.log_params:
                 ax.set_xscale('log')
-            if pj in constants.log_params:
+            if pj in ti.constants.log_params:
                 ax.set_yscale('log')
             fig.savefig(os.path.join(output_dir, f'{pi}_{pj}.png'), dpi=250)
             plt.close()
 
 
 def param_hist(df, estimated, nbins=50):
-    p = parameters.as_dict()
+    p = ti.parameters.as_dict()
 
     for key in estimated:
         df[key] *= p[key]['conversion']
@@ -302,7 +287,7 @@ def param_hist(df, estimated, nbins=50):
             roll = df.error.rolling(100, center=True)
             avg = roll.mean()
 
-            if column in constants.log_params:
+            if column in ti.constants.log_params:
                 ax.set_xscale('log')
             ax.scatter(df[column], df.error, s=1e-2)
             ax.plot(df[column], avg, c='r', lw=2)
@@ -315,8 +300,51 @@ def param_hist(df, estimated, nbins=50):
     return fig
 
 
-def param_timeseries(avg, std, c):
-    p = parameters.as_dict()
+def param_timeseries(df, c):
+    p = ti.parameters.as_dict()
+
+    nrows = len(df.columns)
+
+    fig, axes = plt.subplots(nrows=nrows, figsize=(150*mm, 240*mm), sharex=True)
+    fig.subplots_adjust(left=0.15, bottom=0.04, top=0.98, hspace=.2, right=0.95)
+    for i in range(nrows):
+        ax = axes
+        if nrows > 1:
+            ax = ax[i]
+        ax.set_xlim((df.index.min(), df.index.max()))
+
+        column = df.columns[i]
+
+        _p = p[column]
+        unit = _p['unit'].replace('\\', '')
+        ylabel = _p['math_notation']
+        if unit != ' ':
+            ylabel += f' [{unit}]'
+        ax.set_ylabel(ylabel)
+
+        df[column] *= _p['conversion']
+
+        if _p['log']:
+            ax.set_yscale('log')
+
+        for j in range(2):
+            ax.axhline(
+                float(c.model[column][j])*_p['conversion'],
+                c='k', ls='--', lw=0.5
+            )
+
+        ax.scatter(df.index, df[column], s=1, c='k')
+        ax.plot(df[column].rolling('6H', center=True).median(), lw=2, c='r')
+
+        # ax.set_ylim(
+        #     float(c.model[column][0])*_p['conversion'],
+        #     float(c.model[column][1])*_p['conversion']
+        # )
+    return fig
+
+
+def moving_block(avg, std, c):
+    p = ti.parameters.as_dict()
 
     nrows = len(avg.columns)
 
@@ -340,13 +368,15 @@ def param_timeseries(avg, std, c):
         avg[column] *= _p['conversion']
         std[column] *= _p['conversion']
 
-        if _p['log']:
-            ax.set_yscale('log')
+        # if _p['log']:
+        #     ax.set_yscale('log')
+        # avg = avg.rolling('4H', center=True).median()
+        std = std.rolling('4H', center=True).median()
 
         ax.fill_between(
             avg.index,
-            avg[column]-2*std[column],
-            avg[column]+2*std[column],
+            avg[column]-1*std[column],
+            avg[column]+1*std[column],
             lw=0, fc='r', alpha=0.5
         )
         for j in range(2):
@@ -366,7 +396,7 @@ def param_timeseries(avg, std, c):
 
 def convergence(n_evals, min_err, lw=0.1):
     min_err = np.array(min_err).T
-    min_err /= min_err.min(axis=0)
+    # min_err /= min_err.min(axis=0)
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.plot(n_evals, min_err, lw=lw)

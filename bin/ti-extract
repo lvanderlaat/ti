@@ -2,7 +2,7 @@
 
 
 """
-SSAM computation
+Extracts the spectra to be fitted from the raw waveforms (daily MSEED files).
 """
 
 
@@ -17,19 +17,14 @@ import numpy as np
 import obspy
 import pandas as pd
 import xarray as xr
+import ti
 
 from scipy.fft import rfft
 from scipy.signal.windows import tukey
 
-# Local files
-import config
-import obspy2numpy
-import plot
-import utils
-
 
 __author__ = 'Leonardo van der Laat'
-__email__  = 'laat@umich.edu'
+__email__ = 'laat@umich.edu'
 
 
 def work(
@@ -50,7 +45,7 @@ def work(
         st += tr
 
     # Make windows
-    utcdatetimes, data_windowed = obspy2numpy.st2windowed_data(
+    utcdatetimes, data_windowed = ti.obspy2numpy.st2windowed_data(
         st, window_length, overlap
     )
     if utcdatetimes is None:
@@ -77,9 +72,9 @@ def work(
 
 
 def main():
-    args = utils.parse_args()
+    args = ti.utils.parse_args()
 
-    c = config.read(args.configfile)
+    c = ti.config.read(args.configfile)
 
     # Resampling rate
     m = c.source.sampling_rate % (2*c.model.max_freq)
@@ -98,7 +93,7 @@ def main():
     stachas = list(zip(channels.station, channels.channel))
 
     # Get filenames
-    df = utils.scan_dir(c.source.wfs_dir)
+    df = ti.utils.scan_dir(c.source.wfs_dir)
     df = df[df.stacha.isin(stachas)]
     df = df[c.source.starttime:c.source.endtime]
     lists_of_files = [list(_df.filename) for _, _df in df.groupby('starttime')]
@@ -111,8 +106,9 @@ def main():
         lists_of_files, repeat(c.source.wfs_dir),
         repeat(c.preprocess.freqmin), repeat(c.preprocess.freqmax),
         repeat(inventory), repeat(decimation_factor),
-        repeat(c.window.length), repeat(c.window.overlap), repeat(c.window.pad),
-        repeat(n_subwindows), repeat(npts), repeat(stachas)
+        repeat(c.window.length), repeat(c.window.overlap),
+        repeat(c.window.pad), repeat(n_subwindows), repeat(npts),
+        repeat(stachas)
     )
     with Pool(cpu_count()) as pool:
         results = pool.starmap(work, args_parallel)
@@ -128,6 +124,7 @@ def main():
     Sxx = np.hstack(Sxx)
 
     # X-array
+    print('Number of windows:', len(datetimes))
     data = xr.DataArray(
         Sxx,
         dims=('station', 't', 'f'),
@@ -135,15 +132,15 @@ def main():
     ).sel(t=slice(c.source.starttime, c.source.endtime))
 
     # Output
-    folderpath = utils.create_folder(c.io.output_dir, 'SSAM', c.io.overwrite)
-    utils.write_conf(c, folderpath)
+    folderpath = ti.utils.create_folder(c.io.output_dir, 'SSAM', c.io.overwrite)
+    ti.utils.write_conf(c, folderpath)
     data.to_netcdf(os.path.join(folderpath, 'data.nc'))
 
     # Figures
-    folderfigs = utils.create_folder(folderpath, 'fig', True)
+    folderfigs = ti.utils.create_folder(folderpath, 'fig', True)
     for i, row in channels.iterrows():
         Sxx = data.sel(station=row.station).as_numpy()
-        fig = plot.ssam(data.t.values, data.f, Sxx.T.copy())
+        fig = ti.plot.ssam(data.t.values, data.f, Sxx.T.copy())
         fig.savefig(os.path.join(folderfigs, f'{row.station}.png'), dpi=250)
     return
 

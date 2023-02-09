@@ -55,7 +55,7 @@ def to_latex(c):
             fmt.replace('g', 'f')
 
         if type(v) == list:
-            # v0 = f'{v[0]*conversion}' 
+            # v0 = f'{v[0]*conversion}'
             v0 = v[0]*conversion
             v1 = v[1]*conversion
 
@@ -89,7 +89,7 @@ def to_latex(c):
 
     latex_code = df.style.hide(axis='index').to_latex(
         position='!htb',
-        position_float='centering', 
+        position_float='centering',
         hrules=True,
         label='tab:tremor_simulation',
         caption='Tremor simulation parameters',

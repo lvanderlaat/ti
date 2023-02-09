@@ -21,7 +21,7 @@ __email__ = 'laat@umich.edu'
 
 def filter_spectra(Sx, a, b, alpha=0.05):
     Sx_filt = signal.filtfilt(b, a, Sx)
-    # Sx_filt *= tukey(Sx_filt.shape[-1], alpha=0.05)
+    Sx_filt *= tukey(Sx_filt.shape[-1], alpha=alpha)
     return Sx_filt
 
 

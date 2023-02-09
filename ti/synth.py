@@ -6,45 +6,38 @@ Wrapper function called by the different algorithms.
 """
 
 
-# Python Standard Library
-
 # Other dependencies
 import numpy as np
+import ti
 
-from scipy.fft import fft
-from obspy.signal.filter import bandpass
-
-# Local files
-import model
+from obspy.signal.filter import lowpass
+from scipy.fft import rfft
+from scipy.signal.windows import tukey
 
 
 __author__ = 'Leonardo van der Laat'
 __email__ = 'laat@umich.edu'
 
 
-def _synthetize(param, freqmin, freqmax):
+def synthetize(param):
     # Synthetize
-    dPP0, U, A_p, Sxx = model.synthetize(**param)
+    dPP0, st, A_p, Sxx = ti.model.synthetize(**param)
 
     # Ground velocity spectrum
-    V = np.gradient(U, 1/param['max_freq'], axis=-1)
+    V = np.gradient(st, 1/2/param['max_freq'], axis=-1)
 
     # Filter waveform
-    # for i, tr in enumerate(V):
-    #     V[i] = bandpass(tr, freqmin, freqmax, 2*param['max_freq'])
+    for i, tr in enumerate(V):
+        tr *= tukey(tr.shape[-1], alpha=0.05)
+        V[i] = lowpass(tr, 6, 2*param['max_freq'])
 
     # Compute spectrum
-    Sxx_syn = np.abs(fft(V))
+    Sxx_syn = np.abs(rfft(V))
     return Sxx_syn
 
 
-def synthetize(param, freqmin, freqmax):
-    Sxx_syns = []
-    for j in range(10):
-        Sxx_syn = _synthetize(param, freqmin, freqmax)
-        Sxx_syns.append(Sxx_syn)
-    Sxx_syn = np.array(Sxx_syns).mean(axis=0)
-    return Sxx_syn
+def synthetize_avg(param, n=10):
+    return np.array([synthetize(param) for _ in range(n)]).mean(axis=0)
 
 
 if __name__ == '__main__':

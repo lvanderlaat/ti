@@ -3,37 +3,40 @@
 * Add script `mass_download`
 
 # Tremor inversion 
+
 This repository contains the code used in [van der Laat *et al.* (in prep.)]() to invert tremor using the forward model from Girona *et al.* (2019) 
 
 # Installation
 
-Download a zip file of the code or clone it (HTTP):
+Clone the code, then
 
-    git clone https://github.com/lvanderlaat/tremor_inversion.git
-
-or (SSH):
-
-    git clone git@github.com:lvanderlaat/tremor_inversion.git
-
-Go in the repository directory
-
-    cd tremor_inversion
-
-and create a `conda` environment named `ti` and install the package and its dependencies:
-    
-    conda env create -f environment.yml
-
-Activate the environment
-
+    cd ti
+    conda create -n ti
     conda activate ti
-
-and install this package:
-
+    conda install -c anaconda pandas
+    conda install -c conda-forge obspy
+    conda install -c conda-forge xarray dask netCDF4 bottleneck
+    conda install -c numba numba
+    conda install scikit-image
+    pip install -U pymoo
     pip install -e .
 
 # Run the example
 
-This repository contains a minimal working example that you can run to learn how to use this program:
+## Extract the observations
 
-    cd example
-    jupyter-lab example.ipynb
+    ti-extract example/config.yml
+
+## Monte Carlo inversion
+
+    ti-mc-test example/config.yml
+
+## Genetic Algorith
+
+Test:
+
+    ti-ga-test example/config.yml UWE
+
+Run all:
+
+    ti-ga example/config.yml UWE

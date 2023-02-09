@@ -9,12 +9,9 @@
 
 # Other dependencies
 import xarray as xr
+import ti
 
 from pymoo.optimize import minimize
-
-# Local files
-import moo
-import target
 
 
 __author__ = 'Leonardo van der Laat'
@@ -25,12 +22,9 @@ def optimize(
     Sxx_obs: xr.DataArray,
     param: dict,
     keys: list,
-    freqmin: float,
-    freqmax: float,
     a: float,
     b: float,
-    top_q: float,
-    wmax: float,
+    n_synth: int,
     algorithm,
     termination,
     save_history: bool,
@@ -38,18 +32,8 @@ def optimize(
 ):
     print(Sxx_obs.t.values)
 
-    # Get weights
-    w = target.weight(Sxx_obs.to_numpy(), top_q, wmax)
-
-    problem = moo.Problem(
-        Sxx_obs=Sxx_obs,
-        param=param,
-        keys=keys,
-        freqmin=freqmin,
-        freqmax=freqmax,
-        a=a,
-        b=b,
-        w=w,
+    problem = ti.moo.Problem(
+        Sxx_obs=Sxx_obs, param=param, keys=keys, a=a, b=b, n_synth=n_synth
     )
 
     result = minimize(

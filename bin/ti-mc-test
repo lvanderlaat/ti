@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+
+
+"""
+Monte Carlo parameter estimation of the Girona et al. (2019) tremor model
+"""
+
+
+# Python Standard Library
+import os
+import pprint
+import time
+
+from itertools import repeat
+from multiprocessing import Pool
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+import ti
+
+from scipy import signal
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def optimize(param, Sxx_obs, a, b):
+    Sxx_syn = ti.synth.synthetize_avg(param, 10)
+
+    Sxx_syn = ti.filt.filter_spectra(Sxx_syn, a, b)
+
+    # Compute misfits
+    for i, station in enumerate(Sxx_obs.station):
+        param[station.item(0)] = ti.target.misfit(
+            Sxx_obs.sel(station=station).to_numpy(),
+            Sxx_syn[i]
+        )
+    return param
+
+
+def main():
+    args = ti.utils.parse_args()
+    c = ti.config.read(args.configfile)
+
+    # Parameters to estimate
+    estimated = [key for key, value in c.model.items() if type(value) is list]
+
+    # Output
+    folderpath = ti.utils.create_folder(
+        c.io.output_dir, 'MC-TEST', c.io.overwrite
+    )
+    ti.utils.write_conf(c, folderpath)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+
+    # Sort channels based on order in spectra data
+    channels.station = channels.station.astype('category')
+    channels.station = channels.station.cat.set_categories(obs.station)
+    channels = channels.sort_values(['station']).reset_index(drop=True)
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+
+    # Take the highest energy window for testing
+    obs = obs.sel(t=c.test.time)
+
+    # Number of Monte-Carlo simulations
+    n = int(c.optimize.n)
+
+    # Generate samples
+    param = ti.montecarlo.get_samples(dict(c.model), n, channels)
+
+    # Frequency domain smoothing filter
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+
+    obs_filt = obs.copy()
+    obs_filt.data = ti.filt.filter_spectra(obs, a, b)
+
+    # Multiprocessing pool of workers
+    pool = Pool(c.max_workers)
+
+    # Data holder
+    data = dict()
+    for station in channels.station:
+        data[station] = []
+
+    Sxx = obs_filt.transpose('station', 'f')
+    t0 = time.time()
+
+    # Run parallel
+    args_parallel = zip(
+        param, repeat(Sxx), repeat(a), repeat(b)
+    )
+    _data = pool.starmap(optimize, args_parallel)
+
+    _df = pd.DataFrame(_data)
+
+    t1 = time.time()
+    elapsed_time = int(t1-t0)
+    print(f'\tDone, {int(n)} simulations in {elapsed_time} seconds')
+
+    for station in channels.station:
+        cummin = _df[station].cummin()
+        plt.plot(np.arange(len(_df)), cummin)
+        plt.xlabel('Iteration number')
+        plt.ylabel('Misfit')
+        plt.savefig(
+            os.path.join(folderpath, f'convergence_{station}.png'), dpi=300
+        )
+        plt.close()
+        _o = _df[_df[station] == _df[station].min()].iloc[0].to_dict()
+        data[station].append(_o)
+
+    # test spectrum match
+    for j, row in channels.iterrows():
+        station = row.station
+
+        _df['error'] = _df[station]
+        fig = ti.plot.param_hist(_df, estimated)
+        fig.savefig(
+            os.path.join(folderpath, f'hist_{station}.png'), dpi=250
+        )
+
+        optimal = data[station][0]
+        optimal['xr'] = [row.x]
+        optimal['yr'] = [row.y]
+        optimal['zr'] = [row.z]
+
+        for _station in channels.station:
+            del optimal[_station]
+
+        print(station)
+        pprint.pprint(optimal)
+
+        Sx_obs = obs.sel(station=station)
+        Sx_obs_s = Sxx.sel(station=station)
+        Sx_syn = ti.synth.synthetize_avg(optimal, 10)[0]
+        Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
+
+        fig = ti.plot.optimized_spectrum(
+            obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+        )
+        fig.savefig(
+            os.path.join(folderpath, f'opt_spec_{station}.png'),
+            dpi=250
+        )
+
+    pool.close()
+    pool.join()
+
+    for i, row in channels.iterrows():
+        df = pd.DataFrame(data[row.station])
+        df.to_csv(os.path.join(folderpath, f'param_{row.station}.csv'))
+    return
+
+
+if __name__ == '__main__':
+    main()

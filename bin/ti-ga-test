@@ -8,22 +8,22 @@
 # Python Standard Library
 import argparse
 import os
-
-from multiprocessing import Pool, cpu_count
-from itertools import repeat
+import pprint
+import time
 
 # Other dependencies
+import numpy as np
 import pandas as pd
 import xarray as xr
 import ti
 
-from obspy import UTCDateTime
 from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.termination import get_termination
 from scipy import signal
 
+# Local files
 
 __author__ = 'Leonardo van der Laat'
 __email__ = 'laat@umich.edu'
@@ -58,13 +58,14 @@ def main():
 
     # Load observations
     obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
-    obs = obs.sel(t=slice(c.source.starttime, c.source.endtime))
 
     # Filter depending to channels csv file
     obs = obs.where(obs.station.isin(channels.station), drop=True)
+    obs = obs.sel(t=c.test.time, method='nearest')
 
     b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
-    obs_filt = ti.filt.freq_domain(a, b, obs)
+    obs_filt = obs.copy()
+    obs_filt.data = ti.filt.filter_spectra(obs, a, b)
 
     # Algorithm
     algorithm = GA(
@@ -85,60 +86,43 @@ def main():
     param['yr'] = channels.y.tolist()
     param['zr'] = channels.z.tolist()
 
-    args_parallel = zip(
-        obs_filt.transpose('t', 'station', 'f'),
-        repeat(param), repeat(keys),
-        repeat(a), repeat(b), repeat(c.optimize.n_synth),
-        repeat(algorithm), repeat(termination),
-        repeat(False), repeat(False)
-    )
-    with Pool(cpu_count()) as pool:
-        results = pool.starmap(ti.optimization.optimize, args_parallel)
+    Sxx_obs = obs_filt.transpose('station', 'f')
 
-    param_opt = []
-    for result in results:
-        opt = ti.moo.var_to_dict(param, keys, result.X)
-        opt['Qf'] = opt['Qf'][0]
-        for key in 'xr yr zr'.split():
-            del opt[key]
-        param_opt.append(opt)
+    t0 = time.time()
+    result = ti.optimization.optimize(
+        Sxx_obs, param, keys, a, b, c.optimize.n_synth, algorithm, termination,
+        True, True
+    )
+    t1 = time.time()
+
+    print(f'Optimization time: {t1-t0:.1f} s')
+
+    min_err = []
+    opt = ti.moo.var_to_dict(param, keys, result.X)
+
+    n_evals = np.array([e.evaluator.n_eval for e in result.history])
+    min_err.append(np.array([e.opt[0].F[0] for e in result.history]))
+
+    pprint.pprint(opt, sort_dicts=False)
+
+    fig = ti.plot.convergence(n_evals, min_err, lw=2)
+    fig.savefig(
+        os.path.join(folderpath, 'convergence.png'), dpi=250
+    )
+
+    Sx_obs = obs[0]
+    Sx_obs_s = obs_filt[0]
+    Sx_syn = ti.synth.synthetize_avg(opt, n=c.optimize.n_synth)[0]
+    Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
+
+    fig = ti.plot.optimized_spectrum(
+        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+    )
+    fig.savefig(os.path.join(folderpath, 'opt_spec.png'), dpi=250)
 
     # Output
-    df = pd.DataFrame(param_opt)
-    df['datetime'] = obs.t
-    df.set_index('datetime', inplace=True)
+    df = pd.DataFrame(opt)
     df.to_csv(os.path.join(folderpath, 'param.csv'))
-
-    fig = ti.plot.param_timeseries(df[keys], c)
-    fig.savefig(os.path.join(folderpath, 'param_timeseries.png'), dpi=250)
-
-    # Synthetize
-    df['xr'] = [channels.x.tolist()]*len(df)
-    df['yr'] = [channels.y.tolist()]*len(df)
-    df['zr'] = [channels.z.tolist()]*len(df)
-    df['Qf'] = [[row.Qf] for i, row in df.iterrows()]
-
-    args_parallel = zip(df.to_dict('records'), repeat(c.optimize.n_synth))
-    with Pool(cpu_count()) as pool:
-        syn = pool.starmap(ti.synth.synthetize_avg, args_parallel)
-
-    syn = xr.DataArray(
-        syn,
-        dims=('t', 'station', 'f'),
-        coords=dict(t=obs.t, station=obs.station, f=obs.f)
-    ).transpose('station', 't', 'f')
-    syn.to_netcdf(os.path.join(folderpath, 'data.nc'))
-
-    _Sxx = ti.filt.filter_spectra(syn, a, b)
-    syn_filt = syn.copy()
-    syn_filt.data = _Sxx
-
-    Sxx_obs_filt = obs_filt.sel(station=args.station)
-    Sxx_syn_filt = syn_filt.sel(station=args.station)
-    fig = ti.plot.obs_vs_synth(
-        obs.t.to_numpy(), obs.f.to_numpy(), Sxx_obs_filt.T, Sxx_syn_filt.T
-    )
-    fig.savefig(os.path.join(folderpath, 'comparison.png'), dpi=250)
     return
 
 

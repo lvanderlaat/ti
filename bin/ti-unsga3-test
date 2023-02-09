@@ -1,0 +1,193 @@
+#!/usr/bin/env python
+
+
+"""
+Multi-objective optimization parameter estimation: test
+"""
+
+
+# Python Standard Library
+import os
+import pprint
+
+# Other dependencies
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import xarray as xr
+import ti
+
+
+from pymoo.algorithms.moo.unsga3 import UNSGA3
+from pymoo.decomposition.asf import ASF
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+from pymoo.operators.sampling.rnd import FloatRandomSampling
+from pymoo.optimize import minimize
+from pymoo.termination import get_termination
+from pymoo.util.ref_dirs import get_reference_directions
+
+from scipy import signal
+
+# Local files
+
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def optimize(
+    Sxx_obs,                 # Observed data
+    param, keys,             # Model parameters and keys of estimated
+    a, b,                    # Frequency domain filter
+    algorithm, termination,  # MOO
+    weights,                 # MCDM weights
+    folderpath
+):
+    print(Sxx_obs.t.values)
+
+    problem = ti.moo.Problem(Sxx_obs=Sxx_obs, param=param, keys=keys, a=a, b=b)
+
+    result = minimize(
+        problem,
+        algorithm,
+        termination,
+        seed=1,
+        save_history=True,
+        verbose=True,
+    )
+
+    X = result.X  # variables (n_nds, M)
+    F = result.F  # pareto front (n_nds, M)
+
+    # Multi-Criteria Decision Making (MCDM)
+    # Normalization
+    approx_ideal = F.min(axis=0)
+    approx_nadir = F.max(axis=0)
+    nF = (F - approx_ideal) / (approx_nadir - approx_ideal)
+
+    # Augmented Scalarization Function (ASF)
+    decomp = ASF()
+    i = decomp.do(nF, 1/weights).argmin()  # Weights divide so, use 1/w
+
+    n_evals = np.array([e.evaluator.n_eval for e in result.history])
+    opt = np.array([e.opt[0].F for e in result.history])
+
+    for j, station in enumerate(Sxx_obs.station):
+        plt.plot(n_evals, opt.T[j], label=station.item(0))
+    plt.ylabel('Misfit')
+    plt.xlabel('Number of iteration')
+    plt.yscale('log')
+    plt.legend()
+    plt.savefig(os.path.join(folderpath, 'convergence.png'), dpi=300)
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(F[:, 0], F[:, 1], s=30, facecolors='none', edgecolors='b')
+    plt.scatter(F[i, 0], F[i, 1], marker="x", color="red", s=200)
+    plt.xlabel('Misfit station 1')
+    plt.ylabel('Misfit station 2')
+    plt.savefig(os.path.join(folderpath, 'pareto.png'), dpi=300)
+
+    x = X[i]
+    F = F[i]
+
+    opt = problem.var_to_dict(x)
+    return opt
+
+
+def main():
+    args = ti.utils.parse_args()
+    c = ti.config.read(args.configfile)
+
+    # Output
+    folderpath = ti.utils.create_folder(
+        c.io.output_dir, 'NSGA3', c.io.overwrite
+    )
+    ti.utils.write_conf(c, folderpath)
+    ti.parameters.write_latex(c, folderpath)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+    channels.to_csv(os.path.join(folderpath, 'channels.csv'), index=False)
+
+    # Sort channels based on order in spectra data
+    channels.station = channels.station.astype('category')
+    channels.station = channels.station.cat.set_categories(obs.station)
+    channels = channels.sort_values(['station']).reset_index(drop=True)
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+    obs = obs.sel(t=c.test.time, method='nearest')
+
+    # Smoothing filter
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+    obs_filt = obs.copy()
+    obs_filt.data = ti.filt.filter_spectra(obs, a, b)
+
+    ref_dirs = get_reference_directions(
+        'das-dennis', len(channels), n_partitions=c.moo.n_partitions
+    )
+    print(len(ref_dirs))
+    assert len(ref_dirs) < c.moo.pop_size
+
+    # Algorithm
+    algorithm = UNSGA3(
+        ref_dirs=ref_dirs,
+        pop_size=c.moo.pop_size,
+        n_offsprings=c.moo.n_offsprings,
+        sampling=FloatRandomSampling(),
+        crossover=SBX(**c.moo.sbx),
+        mutation=PM(**c.moo.pm),
+        eliminate_duplicate=c.moo.eliminate_duplicate
+    )
+
+    # Termination criteria
+    termination = get_termination('n_gen', c.moo.n_gen)
+
+    weights = np.array([1]*len(obs.station))
+
+    param = dict(c.model)
+    keys = [key for key, value in param.items() if type(value) is list]
+    param['xr'] = channels.x.tolist()
+    param['yr'] = channels.y.tolist()
+    param['zr'] = channels.z.tolist()
+
+    Sxx_obs = obs_filt.transpose('station', 'f')
+
+    optimal = optimize(
+        Sxx_obs, param, keys, a, b, algorithm, termination, weights, folderpath
+    )
+
+    # test spectrum match
+    Qfs = optimal['Qf']
+    for i, row in channels.iterrows():
+        station = row.station
+
+        optimal['xr'] = [row.x]
+        optimal['yr'] = [row.y]
+        optimal['zr'] = [row.z]
+        optimal['Qf'] = Qfs[i]
+
+        print(station)
+        pprint.pprint(optimal)
+
+        Sx_obs = obs.sel(station=station)
+        Sx_obs_s = obs_filt.sel(station=station)
+        Sx_syn = ti.synth.synthetize(optimal)[0]
+        Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
+
+        fig = ti.plot.optimized_spectrum(
+            obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+        )
+        fig.savefig(
+            os.path.join(folderpath, f'opt_spec_{station}.png'),
+            dpi=250
+        )
+    return
+
+
+if __name__ == '__main__':
+    main()

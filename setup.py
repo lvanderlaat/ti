@@ -22,9 +22,11 @@ setup(
         'bin/ti-bs',
         'bin/ti-extract',
         'bin/ti-ga',
+        'bin/ti-ga-test',
         'bin/ti-mc',
-        'bin/ti-post',
+        'bin/ti-mc-test',
         'bin/ti-unsga3',
+        'bin/ti-unsga3-test',
     ],
     zip_safe=False
 )

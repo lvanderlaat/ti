@@ -14,19 +14,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import xarray as xr
-
-# Local files
-import config
-import utils
-import plot
+import ti
 
 
 __author__ = 'Leonardo van der Laat'
 __email__ = 'laat@umich.edu'
 
 
-filename_avg = 'bs_avg.csv' # TODO must be a constant across all scripts
-filename_std = 'bs_std.csv' # TODO must be a constant across all scripts
+filename_avg = 'param.csv'
 
 
 def load_df(folderpath, filename):
@@ -38,22 +33,28 @@ def load_df(folderpath, filename):
 
 
 def main():
-    # args = utils.parse_args()
-    channels = pd.read_csv(channels_csv, comment='/')
+    # Load configuration
+    args = ti.utils.parse_args()
+    c = ti.config.read(args.configfile)
 
-    data = []
+    keys = [key for key, value in dict(c.model).items() if type(value) is list]
+
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+
+    data, dfs, Qf = [], [], []
     for i, row in channels.iterrows():
-        _folderpath = os.path.join(folderpath, f'GA_{row.station}')
+        print(row.station)
 
-        configfile = os.path.join(_folderpath, 'config.json')
-        c = config.read(configfile)
+        _folderpath = os.path.join(c.io.output_dir, f'GA_{row.station}')
 
-        df = load_df(_folderpath, filename_avg)
+        df = load_df(_folderpath, filename_avg)[keys]
+        Qf.append(df[['Qf']])
+        dfs.append(df)
         t = df.index.tolist()
         data.append(df.values)
 
-
-    keys = [key for key, value in dict(c.model).items() if type(value) is list]
+    Qf = pd.concat(Qf, axis=1)
+    Qf.columns = channels.station
 
     data = np.array(data)
 
@@ -75,13 +76,33 @@ def main():
     avg.drop(axis=1, labels='Qf', inplace=True)
     std.drop(axis=1, labels='Qf', inplace=True)
 
-    fig = plot.param_timeseries(avg, std, c)
-    fig.savefig(os.path.join(folderpath, 'param_timeseries_all_sta.png'), dpi=300)
+    avg.to_csv(os.path.join(c.io.output_dir, 'param_avg.csv'))
+    std.to_csv(os.path.join(c.io.output_dir, 'param_std.csv'))
+    Qf.to_csv(os.path.join(c.io.output_dir, 'param_Qf.csv'))
+
+    mm = 1/25.6
+    for key in keys:
+        fig = plt.figure(figsize=(190*mm, 190*mm))
+        ax = fig.add_subplot(111)
+        for i, station in enumerate(channels.station):
+            ax.plot(
+                avg.index,
+                dfs[i][key].rolling('6H', center=True).median(),
+                lw=0.1
+            )
+        if key != 'Qf':
+            ax.plot(avg[key], lw=2, c='k')
+        ax.set_ylabel(key)
+        fig.savefig(os.path.join(c.io.output_dir, key + '.png'), dpi=300)
+
+    fig = ti.plot.moving_block(avg, std, c)
+    fig.savefig(
+        os.path.join(c.io.output_dir, 'param_timeseries_all_sta.png'),
+        dpi=300
+    )
+
     return
 
 
 if __name__ == '__main__':
-    # folderpath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA_all_sta_Pex_fix'
-    folderpath = '/nfs/turbo/lsa-zspica/work/laat/Halema/porous_gas_flow/GA_all_sta_Pex_var'
-    channels_csv = 'example/channels.csv'
     main()
