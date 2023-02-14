@@ -17,7 +17,6 @@ import pandas as pd
 import xarray as xr
 import ti
 
-from obspy import UTCDateTime
 from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
@@ -35,6 +34,9 @@ def parse_args():
     )
     parser.add_argument('configfile', help='Configuration file path')
     parser.add_argument('station', help='Station')
+    parser.add_argument(
+        '-i', '--i', help='Iterator for multiple jobs', type=int
+    )
     return parser.parse_args()
 
 
@@ -44,9 +46,17 @@ def main():
     c = ti.config.read(args.configfile)
 
     # Output
-    folderpath = ti.utils.create_folder(
-        c.io.output_dir, f'GA_{args.station}', c.io.overwrite
-    )
+    if args.i is not None and not c.io.overwrite:
+        folderpath = os.path.join(
+            c.io.output_dir, f'GA_{args.station}_{args.i}'
+        )
+        if not os.path.exists(folderpath):
+            os.makedirs(folderpath)
+    else:
+        folderpath = ti.utils.create_folder(
+            c.io.output_dir, f'GA_{args.station}', c.io.overwrite
+        )
+
     ti.utils.write_conf(c, folderpath)
 
     ti.parameters.write_latex(c, folderpath)

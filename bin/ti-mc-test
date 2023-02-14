@@ -124,9 +124,9 @@ def main():
         station = row.station
 
         _df['error'] = _df[station]
-        fig = ti.plot.param_hist(_df, estimated)
+        fig = ti.plot.param_scatter(_df, estimated)
         fig.savefig(
-            os.path.join(folderpath, f'hist_{station}.png'), dpi=250
+            os.path.join(folderpath, f'scatter_{station}.png'), dpi=250
         )
 
         optimal = data[station][0]

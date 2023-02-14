@@ -19,10 +19,12 @@ setup(
     ],
     scripts=[
         'bin/ti-avg',
+        'bin/ti-avg-uncertainty',
         'bin/ti-bs',
         'bin/ti-extract',
         'bin/ti-ga',
         'bin/ti-ga-test',
+        'bin/ti-ga-uncertainty',
         'bin/ti-mc',
         'bin/ti-mc-test',
         'bin/ti-unsga3',

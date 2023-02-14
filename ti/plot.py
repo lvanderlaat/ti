@@ -11,11 +11,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import ti
 
 from matplotlib import colors
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import ti
+from matplotlib.cm import ScalarMappable
+
+from scipy.stats import mode
 
 
 __author__ = 'Leonardo van der Laat'
@@ -24,6 +27,12 @@ __email__ = 'laat@umich.edu'
 
 mm = 1/25.6
 UNIT = dict(displacement='m', velocity='m/s')
+
+
+def grid(n):
+    nrows = int(np.ceil(np.sqrt(n)))
+    ncols = int(np.ceil(n/nrows))
+    return nrows, ncols
 
 
 def ssam(
@@ -174,8 +183,7 @@ def obs_vs_synth(
     return fig
 
 
-def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s):
-    normalize = False
+def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, normalize=False):
     if normalize:
         Sx_obs /= Sx_obs.max()
         Sx_syn /= Sx_syn.max()
@@ -236,7 +244,7 @@ def surfaces(df, estimated):
             plt.close()
 
 
-def param_hist(df, estimated, nbins=50):
+def param_scatter(df, estimated, nbins=50):
     p = ti.parameters.as_dict()
 
     for key in estimated:
@@ -245,9 +253,8 @@ def param_hist(df, estimated, nbins=50):
     error = df.error
     df = df[estimated]
 
-    n = len(df.columns) + 1
-    nrows = int(np.ceil(np.sqrt(n)))
-    ncols = int(np.ceil(n/nrows))
+    n = len(estimated)-1
+    nrows, ncols = grid(n)
 
     fig, _axes = plt.subplots(
         nrows=nrows, ncols=ncols, figsize=(90*nrows*mm, 90*ncols*mm)
@@ -295,6 +302,55 @@ def param_hist(df, estimated, nbins=50):
             # ax.plot(df[column], avg+2*std, c='r', lw=0.5)
             ax.set_yscale('log')
             ax.scatter(optimal[column], optimal.error, s=100, c='r', marker='*')
+            i += 1
+    fig.tight_layout()
+    return fig
+
+
+def param_hist(df, estimated, params, nbins=50):
+    p = ti.parameters.as_dict()
+
+    df = df[estimated]
+    for key in estimated:
+        df[key] *= p[key]['conversion']
+
+    n = len(estimated)
+    nrows, ncols = grid(n)
+
+    fig, _axes = plt.subplots(
+        nrows=nrows, ncols=ncols, figsize=(90*nrows*mm, 90*ncols*mm)
+    )
+    i = 0
+    for _axes_ in _axes:
+        for ax in _axes_:
+            if i >= n:
+                ax.remove()
+                continue
+
+            column = estimated[i]
+
+            ax.set_xlabel(ti.parameters.get_parameter_label(column))
+
+            ax.set_ylabel('Number of samples')
+
+            if column in ti.constants.log_params:
+                ax.set_xscale('log')
+
+                bins = np.logspace(
+                    np.log10(df[column].min()),
+                    np.log10(df[column].max()),
+                    nbins
+                )
+            else:
+                bins = nbins
+            ax.hist(df[column], bins=bins, lw=0.5, ec='gray', fc='k')
+
+            for j in range(2):
+                ax.axvline(
+                    float(params[column][j])*p[key]['conversion'],
+                    c='k', ls='--', lw=0.5
+                )
+
             i += 1
     fig.tight_layout()
     return fig
@@ -402,6 +458,119 @@ def convergence(n_evals, min_err, lw=0.1):
     ax.plot(n_evals, min_err, lw=lw)
     ax.set_title('Convergence')
     ax.set_yscale('log')
+    return fig
+
+
+def violinplot(dfs, keys, channels, nbins=50):
+    n = len(keys)
+    fig = plt.figure(figsize=(240*mm, n*40*mm))
+    gs = GridSpec(
+        nrows=n,
+        ncols=2,
+        left=.08,
+        bottom=.1,
+        right=.92,
+        top=.97,
+        wspace=.02,
+        hspace=.1,
+        width_ratios=[1, 0.2],
+    )
+
+    positions = channels.index
+    for i in range(n):
+        ax1 = fig.add_subplot(gs[i, 0])
+        key = keys[i]
+        dataset = [dfs[j][key] for j in range(len(channels))]
+        ax1.violinplot(
+            dataset,
+            positions=positions,
+            showmedians=True,
+            showextrema=False,
+
+        )
+        ylabel = ti.parameters.get_parameter_label(key)
+
+        dataset = np.array(dataset).flatten()
+        if key in ti.constants.log_params:
+            ax1.set_yscale('log')
+            bins = np.logspace(
+                np.log10(dataset.min()),
+                np.log10(dataset.max()),
+                nbins
+            )
+        else:
+            bins = nbins
+
+        ax2 = fig.add_subplot(gs[i, 1], sharey=ax1)
+        dataset = np.array(dataset).flatten()
+        ax2.violinplot(
+            dataset,
+            showmedians=True,
+            showextrema=False,
+        )
+        # ax2.hist(
+        #     np.array(dataset).flatten(),
+        #     bins=bins,
+        #     ec='gray',
+        #     fc='k',
+        #     orientation='horizontal',
+        # )
+
+        ax1.set_ylabel(ylabel)
+        ax2.set_ylabel(ylabel)
+        ax2.yaxis.set_label_position('right')
+        ax1.set_xticks(positions)
+        ax1.set_xticklabels([])
+        ax2.yaxis.tick_right()
+        if i != n - 1:
+            ax2.set_xticklabels([])
+        if key == 'Qf':
+            ax2.remove()
+
+    ax1.set_xticklabels(channels.station, rotation=90)
+    # ax2.set_xlabel('N')
+    return fig
+
+
+def map(key, data, stations, lognorm=False, cmap='turbo'):
+    fig, ax = plt.subplots()
+    ax.set_xlabel('Cartesian easting [km]')
+    ax.set_ylabel('Cartesian northing [km]')
+
+    def major_formatter(x, _): return f'{int(x/1e3)}'
+    ax.xaxis.set_major_formatter(major_formatter)
+    ax.yaxis.set_major_formatter(major_formatter)
+
+    vmin = data.min()
+    vmax = data.max()
+
+    if lognorm:
+        norm = colors.LogNorm(vmin=vmin, vmax=vmax)
+        levels = np.logspace(np.log10(vmin), np.log10(vmax), 100)
+    else:
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+        levels = 100
+
+    im = ax.tricontourf(
+        stations.x, stations.y, data, norm=norm, cmap=cmap,
+        alpha=1, linewidths=0, linecolors='none', levels=levels, zorder=-1
+    )
+
+    fc, lw = 0.65, 0.5
+    ax.scatter(
+        stations.x, stations.y,
+        s=25, facecolor=(fc, fc, fc), edgecolor='k', lw=lw,
+        marker='^', zorder=10
+    )
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right', size='5%', pad=0.05)
+    plt.colorbar(
+        ScalarMappable(norm=im.norm, cmap=im.cmap), cax=cax,
+    )
+    ax.set_title(ti.parameters.get_parameter_label(key))
+    ax.set_aspect('equal')
+    ax.grid('on', alpha=0.2, lw=0.2)
     return fig
 
 

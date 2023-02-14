@@ -105,6 +105,15 @@ def write_latex(c, folderpath):
         f.write(to_latex(c))
 
 
+def get_parameter_label(key):
+    _p = as_dict()[key]
+    unit = _p['unit'].replace('\\', '')
+    label = _p['math_notation']
+    if unit != ' ':
+        label += f' [{unit}]'
+    return label
+
+
 if __name__ == '__main__':
     import config
     c = config.read('./example/config.yml')

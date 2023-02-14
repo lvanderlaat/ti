@@ -1,0 +1,142 @@
+#!/usr/bin/env python
+
+
+"""
+"""
+
+
+# Python Standard Library
+import argparse
+import os
+
+from itertools import repeat
+from multiprocessing import Pool
+
+# Other dependencies
+import pandas as pd
+import xarray as xr
+import ti
+
+from pymoo.algorithms.soo.nonconvex.ga import GA
+from pymoo.operators.crossover.sbx import SBX
+from pymoo.operators.mutation.pm import PM
+from pymoo.termination import get_termination
+from scipy import signal
+
+# Local files
+
+__author__ = 'Leonardo van der Laat'
+__email__ = 'laat@umich.edu'
+
+
+def work(i, Sxx_obs, param, keys, a, b, n_synth, algorithm, termination):
+    print(i)
+    result = ti.optimization.optimize(
+        Sxx_obs, param, keys, a, b, n_synth, algorithm, termination,
+        False, False
+    )
+
+    return ti.moo.var_to_dict(param, keys, result.X)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('configfile', help='Configuration file path')
+    parser.add_argument('station', help='Station')
+    return parser.parse_args()
+
+
+def main():
+    # Load configuration
+    args = parse_args()
+    c = ti.config.read(args.configfile)
+
+    # Output
+    folderpath = ti.utils.create_folder(
+        c.io.output_dir, f'GA_{args.station}', c.io.overwrite
+    )
+    ti.utils.write_conf(c, folderpath)
+
+    ti.parameters.write_latex(c, folderpath)
+
+    # Load channels
+    channels = pd.read_csv(c.source.channels_csv, comment='/')
+    channels = channels[channels.station == args.station]
+    channels.to_csv(os.path.join(folderpath, 'channels.csv'), index=False)
+
+    # Load observations
+    obs = xr.open_dataarray(os.path.join(c.optimize.obs_folder, 'data.nc'))
+
+    # Filter depending to channels csv file
+    obs = obs.where(obs.station.isin(channels.station), drop=True)
+    obs = obs.sel(t=c.test.time, method='nearest')
+
+    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
+    obs_filt = obs.copy()
+    obs_filt.data = ti.filt.filter_spectra(obs, a, b)
+
+    # Algorithm
+    algorithm = GA(
+        pop_size=c.moo.pop_size,
+        n_offsprings=c.moo.n_offsprings,
+        crossover=SBX(**c.moo.sbx),
+        mutation=PM(**c.moo.pm),
+        eliminate_duplicate=c.moo.eliminate_duplicate
+    )
+
+    # Termination criteria
+    termination = get_termination('n_gen', c.moo.n_gen)
+
+    # Model parameters
+    param = dict(c.model)
+    keys = [key for key, value in param.items() if type(value) is list]
+    param['xr'] = channels.x.tolist()
+    param['yr'] = channels.y.tolist()
+    param['zr'] = channels.z.tolist()
+
+    Sxx_obs = obs_filt.transpose('station', 'f')
+
+    args_parallel = zip(
+        range(c.uncertainty.n),
+        repeat(Sxx_obs),
+        repeat(param),
+        repeat(keys),
+        repeat(a),
+        repeat(b),
+        repeat(c.optimize.n_synth),
+        repeat(algorithm),
+        repeat(termination),
+    )
+    with Pool(c.max_workers) as pool:
+        results = pool.starmap(work, args_parallel)
+
+    df = pd.DataFrame(results)
+    df['Qf'] = df.Qf.apply(pd.Series)
+    fig = ti.plot.param_hist(df, keys, c.model)
+    fig.savefig(os.path.join(folderpath, 'hist.png'), dpi=250)
+
+    # Output
+    df.to_csv(os.path.join(folderpath, 'param.csv'))
+
+    opt = df.median().to_dict()
+    opt['xr'] = channels.x.tolist()
+    opt['yr'] = channels.y.tolist()
+    opt['zr'] = channels.z.tolist()
+
+    Sx_obs = obs[0]
+    Sx_obs_s = obs_filt[0]
+    Sx_syn = ti.synth.synthetize_avg(opt, n=c.optimize.n_synth)[0]
+    Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
+
+    fig = ti.plot.optimized_spectrum(
+        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+    )
+    fig.savefig(os.path.join(folderpath, 'opt_spec.png'), dpi=250)
+
+    return
+
+
+if __name__ == '__main__':
+    main()

@@ -62,7 +62,7 @@ def harmonic_oscillator_coefficients(
 
 
 @jit(nopython=True)
-def natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1):
+def _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1):
     return sqrt(
         (
             sqrt(
@@ -221,6 +221,8 @@ def synthetize(
         L, beta_a, beta_b, beta_c, beta_d, beta_e
     )
 
+    # print(natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1))
+
     A_res, A_exc, A_p = pressure_freq_domain(
         f, t0, qn, gamma0, gamma1, GAMMA0, GAMMA1, GAMMA2
     )
@@ -252,7 +254,41 @@ def synthetize(
     return dPP0, st, A_p, Sxx
 
 
-def figure(max_freq, tau, dPP0, st, A_p, Sxx, lw=0.5, mm=1/25.6, alpha=0.7):
+def natural_frequency(
+    # Gas properties
+    mu_g=1e-5,      # gas viscosity
+    T=1000+273.15,  # gas temperature
+    M=0.018,        # molecular weight of gas (water vapor)
+    Rg=8.3145,      # ideal gas constant
+    # Flux
+    Q=2,            # mean gas flux
+    # Conduit geometry
+    R=25,           # conduit radius
+    S=None,         # conduit section
+    # Gas pocket
+    D=0.03,         # gas pocket thickness
+    # Cap properties
+    L=20,           # thickness of the cap
+    kappa=1e-8,     # permeability of the cap
+    phi=1e-4,       # porosity of the cap
+    # External pressure
+    Pex=101325,     # external pressure
+
+):
+    if S is None or np.isnan(S):
+        S = pi*R**2
+
+    beta_a, beta_b, beta_c, beta_d, beta_e, P0 = auxiliary_parameters(
+        mu_g, T, M, Rg, Q, S, D, L, kappa, phi, Pex
+    )
+
+    GAMMA0, GAMMA1, GAMMA2, gamma0, gamma1 = harmonic_oscillator_coefficients(
+        L, beta_a, beta_b, beta_c, beta_d, beta_e
+    )
+    return _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1)
+
+
+def figure(max_freq, tau, dPP0, st, A_p, Sxx, fn=None, lw=0.5, mm=1/25.6, alpha=0.7):
     t, f = time_freq_arrays(tau, max_freq)
 
     fig, axes = plt.subplots(
@@ -282,7 +318,10 @@ def figure(max_freq, tau, dPP0, st, A_p, Sxx, lw=0.5, mm=1/25.6, alpha=0.7):
         ['Ground displacement [m]', 'Ground displacement [m]']
     ]
     for i in range(2):
+        if fn is not None:
+            axes[i, 1].axvline(fn, lw=0.5, ls='--')
         axes[i, 1].set_xscale('log')
+        # axes[i, 1].set_xlim(1e-1, max_freq)
         for j in range(2):
             axes[i, j].set_xlabel(xlabel[i][j])
             axes[i, j].set_ylabel(ylabel[i][j])
@@ -311,7 +350,7 @@ if __name__ == '__main__':
         R=25,           # conduit radius
         S=None,         # conduit section
         # Gas pocket
-        D=0.03,         # gas pocket thickness
+        D=1e-3,         # gas pocket thickness
         # Cap properties
         L=20,           # thickness of the cap
         kappa=1e-8,     # permeability of the cap
@@ -322,10 +361,10 @@ if __name__ == '__main__':
         xr=[0, 2e3, 5e3],    # Stations x-coordinate
         yr=[0, 0, 0],         # Stations x-coordinate
         zr=[0, 0, 0],         # Stations x-coordinate
-        Qf=20,     # Quality factors for each station (list or number)
+        Qf=[10, 20, 50],     # Quality factors for each station (list or number)
         rho_s=3000,       # density of the medium of propagation
     )
-    dPP0, st, A_p, Sxx = synthetize(**param)
+    dPP0, st, A_p, Sxx, fn = synthetize(**param)
 
     fig = figure(param['max_freq'], param['tau'], dPP0, st, A_p, Sxx)
-    plt.show()
+    fig.savefig('borrar.png')
