@@ -67,8 +67,6 @@ def main():
     ax.ticklabel_format(style='plain', axis='y')
     # ax.yscale('log')
     fig.savefig(os.path.join(c.io.output_dir, 'fnat_mean.png'), dpi=250)
-    print()
-    exit()
 
     if 'Qf' in keys:
         Qf = pd.concat(Qf, axis=1)

@@ -47,7 +47,7 @@ class Problem(ElementwiseProblem):
         super().__init__(
             n_var=len(self.xl),
             n_obj=self.n_stations,
-            n_ieq_constr=0,
+            n_ieq_constr=2,
             xl=self.xl,
             xu=self.xu,
             **kwargs,
@@ -97,10 +97,10 @@ class Problem(ElementwiseProblem):
             Sx_syn = Sxx_syn[i]
             out['F'].append(ti.target.misfit(Sx_obs, Sx_syn))
 
-        # out['G'] = [
-        #     self.fnat_range[0] - fnat,
-        #     fnat - self.fnat_range[1]
-        # ]
+        out['G'] = [
+            self.fnat_range[0] - fnat,
+            fnat - self.fnat_range[1]
+        ]
         return
 
     def var_to_dict(self, x):
