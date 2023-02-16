@@ -135,5 +135,25 @@ def var_to_dict(param, keys, x):
     return opt
 
 
+class NaturalFrequency(ElementwiseProblem):
+    def __init__(self, param, free, xl, xu, fn, **kwargs):
+        self.param = param
+        self.free = free
+        self.fn = fn
+
+        super().__init__(
+            n_var=1,
+            n_obj=1,
+            n_ieq_constr=0,
+            xl=xl,
+            xu=xu,
+            **kwargs,
+        )
+
+    def _evaluate(self, x, out, *args, **kwargs):
+        self.param[self.free] = x
+        out['F'] = np.abs(self.fn - ti.model.natural_frequency(**self.param))
+
+
 if __name__ == '__main__':
     pass
