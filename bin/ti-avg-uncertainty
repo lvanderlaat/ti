@@ -34,9 +34,18 @@ def main():
     channels.sort_values(by='distance', inplace=True, ignore_index=True)
 
     dfs = []
+    fnat = []
     for i, row in channels.iterrows():
         folderpath = os.path.join(c.io.output_dir, f'GA_{row.station}')
         dfs.append(pd.read_csv(os.path.join(folderpath, 'param.csv'))[keys])
+        fnat.append(pd.read_csv(os.path.join(folderpath, 'fnat.csv')))
+    fig = ti.plot.fnat_violinplot(fnat, channels)
+    fig.savefig(os.path.join(c.io.output_dir, 'fnat.png'), dpi=250)
+
+    fig = ti.plot.violinplot(dfs, keys, channels, c.model)
+    fig.savefig(
+        os.path.join(c.io.output_dir, 'violinplot_violinplot.png'), dpi=250
+    )
 
     data = {}
     for i, key in enumerate(keys):
@@ -74,10 +83,7 @@ def main():
     with open(os.path.join(c.io.output_dir, 'params_mean.tex'), 'w') as f:
         f.write(latex_code)
 
-    fig = ti.plot.violinplot(dfs, keys, channels)
-    fig.savefig(
-        os.path.join(c.io.output_dir, 'violinplot_violinplot.png'), dpi=250
-    )
+
     return
 
 

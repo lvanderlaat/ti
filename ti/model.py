@@ -11,6 +11,10 @@ Script to generate synthetic seismograms according to:
 For questions and comments regarding the model: tarsilo.girona@jpl.nasa.gov
 """
 
+# Python Standard Library
+from inspect import signature
+
+# Other dependencies
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -70,6 +74,40 @@ def _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1):
             ) - GAMMA2*gamma0**2
         )/(GAMMA2*gamma1**2)
     )/(2*pi)
+
+
+def natural_frequency(
+    # Gas properties
+    mu_g=1e-5,      # gas viscosity
+    T=1000+273.15,  # gas temperature
+    M=0.018,        # molecular weight of gas (water vapor)
+    Rg=8.3145,      # ideal gas constant
+    # Flux
+    Q=2,            # mean gas flux
+    # Conduit geometry
+    R=25,           # conduit radius
+    S=None,         # conduit section
+    # Gas pocket
+    D=0.03,         # gas pocket thickness
+    # Cap properties
+    L=20,           # thickness of the cap
+    kappa=1e-8,     # permeability of the cap
+    phi=1e-4,       # porosity of the cap
+    # External pressure
+    Pex=101325,     # external pressure
+
+):
+    if S is None or np.isnan(S):
+        S = pi*R**2
+
+    beta_a, beta_b, beta_c, beta_d, beta_e, P0 = auxiliary_parameters(
+        mu_g, T, M, Rg, Q, S, D, L, kappa, phi, Pex
+    )
+
+    GAMMA0, GAMMA1, GAMMA2, gamma0, gamma1 = harmonic_oscillator_coefficients(
+        L, beta_a, beta_b, beta_c, beta_d, beta_e
+    )
+    return _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1)
 
 
 @jit(nopython=True)
@@ -221,7 +259,7 @@ def synthetize(
         L, beta_a, beta_b, beta_c, beta_d, beta_e
     )
 
-    # print(natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1))
+    fnat = _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1)
 
     A_res, A_exc, A_p = pressure_freq_domain(
         f, t0, qn, gamma0, gamma1, GAMMA0, GAMMA1, GAMMA2
@@ -251,44 +289,12 @@ def synthetize(
         st.append(U_z)
     Sxx = np.array(Sxx)
     st = np.array(st)
-    return dPP0, st, A_p, Sxx
+    return dPP0, st, A_p, Sxx, fnat
 
 
-def natural_frequency(
-    # Gas properties
-    mu_g=1e-5,      # gas viscosity
-    T=1000+273.15,  # gas temperature
-    M=0.018,        # molecular weight of gas (water vapor)
-    Rg=8.3145,      # ideal gas constant
-    # Flux
-    Q=2,            # mean gas flux
-    # Conduit geometry
-    R=25,           # conduit radius
-    S=None,         # conduit section
-    # Gas pocket
-    D=0.03,         # gas pocket thickness
-    # Cap properties
-    L=20,           # thickness of the cap
-    kappa=1e-8,     # permeability of the cap
-    phi=1e-4,       # porosity of the cap
-    # External pressure
-    Pex=101325,     # external pressure
-
+def figure(
+    max_freq, tau, dPP0, st, A_p, Sxx, fnat=None, lw=0.5, mm=1/25.6, alpha=0.7
 ):
-    if S is None or np.isnan(S):
-        S = pi*R**2
-
-    beta_a, beta_b, beta_c, beta_d, beta_e, P0 = auxiliary_parameters(
-        mu_g, T, M, Rg, Q, S, D, L, kappa, phi, Pex
-    )
-
-    GAMMA0, GAMMA1, GAMMA2, gamma0, gamma1 = harmonic_oscillator_coefficients(
-        L, beta_a, beta_b, beta_c, beta_d, beta_e
-    )
-    return _natural_frequency(GAMMA1, GAMMA2, gamma0, gamma1)
-
-
-def figure(max_freq, tau, dPP0, st, A_p, Sxx, fn=None, lw=0.5, mm=1/25.6, alpha=0.7):
     t, f = time_freq_arrays(tau, max_freq)
 
     fig, axes = plt.subplots(
@@ -318,8 +324,8 @@ def figure(max_freq, tau, dPP0, st, A_p, Sxx, fn=None, lw=0.5, mm=1/25.6, alpha=
         ['Ground displacement [m]', 'Ground displacement [m]']
     ]
     for i in range(2):
-        if fn is not None:
-            axes[i, 1].axvline(fn, lw=0.5, ls='--')
+        if fnat is not None:
+            axes[i, 1].axvline(fnat, lw=0.5, ls='--')
         axes[i, 1].set_xscale('log')
         # axes[i, 1].set_xlim(1e-1, max_freq)
         for j in range(2):
@@ -328,6 +334,11 @@ def figure(max_freq, tau, dPP0, st, A_p, Sxx, fn=None, lw=0.5, mm=1/25.6, alpha=
 
     fig.tight_layout()
     return fig
+
+
+def get_fnat_params():
+    fnat_params = signature(natural_frequency).parameters.values()
+    return [p.name for p in fnat_params]
 
 
 if __name__ == '__main__':
@@ -361,10 +372,12 @@ if __name__ == '__main__':
         xr=[0, 2e3, 5e3],    # Stations x-coordinate
         yr=[0, 0, 0],         # Stations x-coordinate
         zr=[0, 0, 0],         # Stations x-coordinate
-        Qf=[10, 20, 50],     # Quality factors for each station (list or number)
+        Qf=[10, 20, 50],   # Quality factors for each station (list or number)
         rho_s=3000,       # density of the medium of propagation
     )
-    dPP0, st, A_p, Sxx, fn = synthetize(**param)
+    dPP0, st, A_p, Sxx, fnat = synthetize(**param)
 
-    fig = figure(param['max_freq'], param['tau'], dPP0, st, A_p, Sxx)
+    fig = figure(
+        param['max_freq'], param['tau'], dPP0, st, A_p, Sxx, fnat=fnat
+    )
     fig.savefig('borrar.png')

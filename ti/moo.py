@@ -29,6 +29,7 @@ class Problem(ElementwiseProblem):
         a=None,
         b=None,
         n_synth=3,
+        fnat_range=None,
         **kwargs,
     ):
         self.Sxx_obs = Sxx_obs
@@ -37,6 +38,7 @@ class Problem(ElementwiseProblem):
         self.a = a
         self.b = b
         self.n_synth = n_synth
+        self.fnat_range = fnat_range
 
         self.n_stations = self.Sxx_obs.shape[0]
 
@@ -86,7 +88,7 @@ class Problem(ElementwiseProblem):
         self.param = self.var_to_dict(x)
 
         # Sxx_syn = ti.synth.synthetize_avg(self.param, n=self.n_synth)
-        Sxx_syn = ti.synth.synthetize(self.param)
+        Sxx_syn, fnat = ti.synth.synthetize(self.param)
         Sxx_syn = ti.filt.filter_spectra(Sxx_syn, self.a, self.b)
 
         out['F'] = []
@@ -94,6 +96,11 @@ class Problem(ElementwiseProblem):
             Sx_obs = self.Sxx_obs.sel(station=station).to_numpy()
             Sx_syn = Sxx_syn[i]
             out['F'].append(ti.target.misfit(Sx_obs, Sx_syn))
+
+        # out['G'] = [
+        #     self.fnat_range[0] - fnat,
+        #     fnat - self.fnat_range[1]
+        # ]
         return
 
     def var_to_dict(self, x):

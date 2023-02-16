@@ -63,7 +63,7 @@ def ssam(
     im = ax.pcolormesh(t, f, Sxx, norm=norm)
 
     ax.set_yscale(yscale)
-    ax.set_ylim(1e-1, f.max())
+    ax.set_ylim(1e-2, f.max())
 
     cax = ax.inset_axes([0.0, 1.05, 1, 0.05], transform=ax.transAxes)
     plt.colorbar(im, cax=cax, orientation='horizontal', label=cbar_label)
@@ -180,10 +180,15 @@ def obs_vs_synth(
     _ssam(ax3, cax3, t, f, Sxx_syn, qmin, qmax, False, 'turbo', cbar_label)
     _ssam(ax4, cax4, t, f, Sxx_err, qmin, qmax, False, 'coolwarm',
           cbar_label_diff, centered=True)
+
+    for ax in [ax2, ax3, ax4]:
+        ax.set_yscale('log')
     return fig
 
 
-def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, normalize=False):
+def optimized_spectrum(
+    f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, fnat, normalize=False
+):
     if normalize:
         Sx_obs /= Sx_obs.max()
         Sx_syn /= Sx_syn.max()
@@ -207,6 +212,9 @@ def optimized_spectrum(f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, normalize=False):
     ax.set_xlim(0.1, 6.25)
     ax.set_xscale('log')
     # ax.set_yscale('log')
+
+    ax.axvline(fnat, lw=1, ls='--', label='Natural frequency of resonator')
+
     ax.legend()
 
     fig.tight_layout()
@@ -327,27 +335,27 @@ def param_hist(df, estimated, params, nbins=50):
                 ax.remove()
                 continue
 
-            column = estimated[i]
+            key = estimated[i]
 
-            ax.set_xlabel(ti.parameters.get_parameter_label(column))
+            ax.set_xlabel(ti.parameters.get_parameter_label(key))
 
             ax.set_ylabel('Number of samples')
 
-            if column in ti.constants.log_params:
+            if key in ti.constants.log_params:
                 ax.set_xscale('log')
 
                 bins = np.logspace(
-                    np.log10(df[column].min()),
-                    np.log10(df[column].max()),
+                    np.log10(df[key].min()),
+                    np.log10(df[key].max()),
                     nbins
                 )
             else:
                 bins = nbins
-            ax.hist(df[column], bins=bins, lw=0.5, ec='gray', fc='k')
+            ax.hist(df[key], bins=bins, lw=0.5, ec='gray', fc='k')
 
             for j in range(2):
                 ax.axvline(
-                    float(params[column][j])*p[key]['conversion'],
+                    float(params[key][j])*p[key]['conversion'],
                     c='k', ls='--', lw=0.5
                 )
 
@@ -424,8 +432,8 @@ def moving_block(avg, std, c):
         avg[column] *= _p['conversion']
         std[column] *= _p['conversion']
 
-        # if _p['log']:
-        #     ax.set_yscale('log')
+        if _p['log']:
+            ax.set_yscale('log')
         # avg = avg.rolling('4H', center=True).median()
         std = std.rolling('4H', center=True).median()
 
@@ -461,7 +469,7 @@ def convergence(n_evals, min_err, lw=0.1):
     return fig
 
 
-def violinplot(dfs, keys, channels, nbins=50):
+def violinplot(dfs, keys, channels, param, nbins=50):
     n = len(keys)
     fig = plt.figure(figsize=(240*mm, n*40*mm))
     gs = GridSpec(
@@ -477,10 +485,12 @@ def violinplot(dfs, keys, channels, nbins=50):
     )
 
     positions = channels.index
+    p = ti.parameters.as_dict()
     for i in range(n):
         ax1 = fig.add_subplot(gs[i, 0])
         key = keys[i]
-        dataset = [dfs[j][key] for j in range(len(channels))]
+        _p = p[key]
+        dataset = [dfs[j][key]*_p['conversion'] for j in range(len(channels))]
         ax1.violinplot(
             dataset,
             positions=positions,
@@ -493,13 +503,6 @@ def violinplot(dfs, keys, channels, nbins=50):
         dataset = np.array(dataset).flatten()
         if key in ti.constants.log_params:
             ax1.set_yscale('log')
-            bins = np.logspace(
-                np.log10(dataset.min()),
-                np.log10(dataset.max()),
-                nbins
-            )
-        else:
-            bins = nbins
 
         ax2 = fig.add_subplot(gs[i, 1], sharey=ax1)
         dataset = np.array(dataset).flatten()
@@ -508,13 +511,6 @@ def violinplot(dfs, keys, channels, nbins=50):
             showmedians=True,
             showextrema=False,
         )
-        # ax2.hist(
-        #     np.array(dataset).flatten(),
-        #     bins=bins,
-        #     ec='gray',
-        #     fc='k',
-        #     orientation='horizontal',
-        # )
 
         ax1.set_ylabel(ylabel)
         ax2.set_ylabel(ylabel)
@@ -527,8 +523,59 @@ def violinplot(dfs, keys, channels, nbins=50):
         if key == 'Qf':
             ax2.remove()
 
+        for j in range(2):
+            for ax in [ax1, ax2]:
+                ax.axhline(
+                    float(param[key][j])*_p['conversion'],
+                    c='r', lw=0.5, ls='--'
+                )
+
     ax1.set_xticklabels(channels.station, rotation=90)
     # ax2.set_xlabel('N')
+    return fig
+
+
+def fnat_violinplot(dfs, channels):
+    positions = channels.index
+
+    fig = plt.figure(figsize=(240*mm, 80*mm))
+
+    gs = GridSpec(
+        nrows=1,
+        ncols=2,
+        left=.08,
+        bottom=.2,
+        right=.92,
+        top=.97,
+        wspace=.02,
+        width_ratios=[1, 0.2],
+    )
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    dataset = [dfs[j].fnat for j in range(len(channels))]
+    ax1.violinplot(
+        dataset,
+        positions=positions,
+        showmedians=True,
+        showextrema=False,
+    )
+    dataset = np.array(dataset).flatten()
+
+    ax2 = fig.add_subplot(gs[0, 1], sharey=ax1)
+    dataset = np.array(dataset).flatten()
+    ax2.violinplot(
+        dataset,
+        showmedians=True,
+        showextrema=False,
+    )
+
+    ax1.set_ylabel('$f_{nat}$')
+    ax2.set_ylabel('$f_{nat}$')
+    ax2.yaxis.set_label_position('right')
+    ax1.set_xticks(positions)
+    ax2.yaxis.tick_right()
+    ax1.set_xticklabels(channels.station, rotation=90)
+    ax1.set_yscale('log')
     return fig
 
 

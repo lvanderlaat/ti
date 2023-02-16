@@ -13,6 +13,7 @@ from multiprocessing import Pool, cpu_count
 from itertools import repeat
 
 # Other dependencies
+import matplotlib.pyplot as plt
 import pandas as pd
 import xarray as xr
 import ti
@@ -99,6 +100,7 @@ def main():
         obs_filt.transpose('t', 'station', 'f'),
         repeat(param), repeat(keys),
         repeat(a), repeat(b), repeat(c.optimize.n_synth),
+        repeat(c.optimize.fnat_range),
         repeat(algorithm), repeat(termination),
         repeat(False), repeat(False)
     )
@@ -108,7 +110,8 @@ def main():
     param_opt = []
     for result in results:
         opt = ti.moo.var_to_dict(param, keys, result.X)
-        opt['Qf'] = opt['Qf'][0]
+        if type(opt['Qf']) is list:
+            opt['Qf'] = opt['Qf'][0]
         for key in 'xr yr zr'.split():
             del opt[key]
         param_opt.append(opt)
@@ -118,6 +121,17 @@ def main():
     df['datetime'] = obs.t
     df.set_index('datetime', inplace=True)
     df.to_csv(os.path.join(folderpath, 'param.csv'))
+
+    fnat = []
+    params = df[ti.model.get_fnat_params()].to_dict('records')
+    for param in params:
+        fnat.append(ti.model.natural_frequency(**param))
+    fnat = pd.DataFrame(fnat, columns=['fnat'], index=df.index)
+    fnat.to_csv(os.path.join(folderpath, 'fnat_ts.csv'))
+    plt.plot(fnat.fnat)
+    plt.ylabel('$f_{nat}$')
+    plt.savefig(os.path.join(folderpath, 'fnat_ts.png'), dpi=250)
+    plt.close()
 
     fig = ti.plot.param_timeseries(df[keys], c)
     fig.savefig(os.path.join(folderpath, 'param_timeseries.png'), dpi=250)

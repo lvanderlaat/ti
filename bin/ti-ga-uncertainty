@@ -9,10 +9,12 @@
 import argparse
 import os
 
+
 from itertools import repeat
 from multiprocessing import Pool
 
 # Other dependencies
+import matplotlib.pyplot as plt
 import pandas as pd
 import xarray as xr
 import ti
@@ -29,13 +31,15 @@ __author__ = 'Leonardo van der Laat'
 __email__ = 'laat@umich.edu'
 
 
-def work(i, Sxx_obs, param, keys, a, b, n_synth, algorithm, termination):
+def work(
+    i, Sxx_obs, param, keys, a, b, n_synth, fnat_range, algorithm, termination
+):
     print(i)
     result = ti.optimization.optimize(
-        Sxx_obs, param, keys, a, b, n_synth, algorithm, termination,
+        Sxx_obs, param, keys, a, b, n_synth, fnat_range,
+        algorithm, termination,
         False, False
     )
-
     return ti.moo.var_to_dict(param, keys, result.X)
 
 
@@ -106,6 +110,7 @@ def main():
         repeat(a),
         repeat(b),
         repeat(c.optimize.n_synth),
+        repeat(c.optimize.fnat_range),
         repeat(algorithm),
         repeat(termination),
     )
@@ -113,6 +118,20 @@ def main():
         results = pool.starmap(work, args_parallel)
 
     df = pd.DataFrame(results)
+
+    fnat = []
+    params = df[ti.model.get_fnat_params()].to_dict('records')
+    for param in params:
+        fnat.append(ti.model.natural_frequency(**param))
+    fnat = pd.DataFrame(fnat, columns=['fnat'])
+    fnat.to_csv(os.path.join(folderpath, 'fnat.csv'), index=False)
+
+    plt.hist(fnat.fnat, bins=50)
+    plt.xlabel('$f_{nat}$')
+    plt.ylabel('N')
+    plt.savefig(os.path.join(folderpath, 'fnat.png'), dpi=300)
+    plt.close()
+
     df['Qf'] = df.Qf.apply(pd.Series)
     fig = ti.plot.param_hist(df, keys, c.model)
     fig.savefig(os.path.join(folderpath, 'hist.png'), dpi=250)
@@ -127,11 +146,12 @@ def main():
 
     Sx_obs = obs[0]
     Sx_obs_s = obs_filt[0]
-    Sx_syn = ti.synth.synthetize_avg(opt, n=c.optimize.n_synth)[0]
+    Sx_syn, fnat = ti.synth.synthetize(opt)
+    Sx_syn = Sx_syn[0]
     Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
 
     fig = ti.plot.optimized_spectrum(
-        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, fnat
     )
     fig.savefig(os.path.join(folderpath, 'opt_spec.png'), dpi=250)
 

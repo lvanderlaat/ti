@@ -25,6 +25,7 @@ def optimize(
     a: float,
     b: float,
     n_synth: int,
+    fnat_range: list,
     algorithm,
     termination,
     save_history: bool,
@@ -33,7 +34,8 @@ def optimize(
     print(Sxx_obs.t.values)
 
     problem = ti.moo.Problem(
-        Sxx_obs=Sxx_obs, param=param, keys=keys, a=a, b=b, n_synth=n_synth
+        Sxx_obs=Sxx_obs, param=param, keys=keys, a=a, b=b, n_synth=n_synth,
+        fnat_range=fnat_range
     )
 
     result = minimize(

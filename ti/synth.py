@@ -21,7 +21,7 @@ __email__ = 'laat@umich.edu'
 
 def synthetize(param):
     # Synthetize
-    dPP0, st, A_p, Sxx = ti.model.synthetize(**param)
+    dPP0, st, A_p, Sxx, fnat = ti.model.synthetize(**param)
 
     # Ground velocity spectrum
     V = np.gradient(st, 1/2/param['max_freq'], axis=-1)
@@ -33,11 +33,11 @@ def synthetize(param):
 
     # Compute spectrum
     Sxx_syn = np.abs(rfft(V))
-    return Sxx_syn
+    return Sxx_syn, fnat
 
 
 def synthetize_avg(param, n=10):
-    return np.array([synthetize(param) for _ in range(n)]).mean(axis=0)
+    return np.array([synthetize(param)[0] for _ in range(n)]).mean(axis=0)
 
 
 if __name__ == '__main__':

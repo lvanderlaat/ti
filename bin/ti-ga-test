@@ -90,7 +90,8 @@ def main():
 
     t0 = time.time()
     result = ti.optimization.optimize(
-        Sxx_obs, param, keys, a, b, c.optimize.n_synth, algorithm, termination,
+        Sxx_obs, param, keys, a, b, c.optimize.n_synth, c.optimize.fnat_range,
+        algorithm, termination,
         True, True
     )
     t1 = time.time()
@@ -112,11 +113,12 @@ def main():
 
     Sx_obs = obs[0]
     Sx_obs_s = obs_filt[0]
-    Sx_syn = ti.synth.synthetize_avg(opt, n=c.optimize.n_synth)[0]
+    Sx_syn, fnat = ti.synth.synthetize(opt)
+    Sx_syn = Sx_syn[0]
     Sx_syn_s = ti.filt.filter_spectra(Sx_syn, a, b)
 
     fig = ti.plot.optimized_spectrum(
-        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s
+        obs.f, Sx_obs, Sx_syn, Sx_obs_s, Sx_syn_s, fnat
     )
     fig.savefig(os.path.join(folderpath, 'opt_spec.png'), dpi=250)
 

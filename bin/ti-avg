@@ -41,20 +41,38 @@ def main():
 
     channels = pd.read_csv(c.source.channels_csv, comment='/')
 
-    data, dfs, Qf = [], [], []
+    data, dfs, Qf, fnats = [], [], [], []
     for i, row in channels.iterrows():
         print(row.station)
 
         _folderpath = os.path.join(c.io.output_dir, f'GA_{row.station}')
 
         df = load_df(_folderpath, filename_avg)[keys]
-        Qf.append(df[['Qf']])
+        if 'Qf' in keys:
+            Qf.append(df[['Qf']])
         dfs.append(df)
         t = df.index.tolist()
         data.append(df.values)
+        fnats.append(load_df(_folderpath, 'fnat_ts.csv'))
 
-    Qf = pd.concat(Qf, axis=1)
-    Qf.columns = channels.station
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    fnat_mean = []
+    for fnat in fnats:
+        ax.scatter(fnat.index, fnat.fnat, s=0.1)
+        fnat_mean.append(fnat.fnat.values)
+    fnat_mean = np.array(fnat_mean).mean(axis=0)
+    ax.plot(fnat.index, fnat_mean, lw=2, c='k')
+    ax.set_ylabel('$f_{nat}$')
+    ax.ticklabel_format(style='plain', axis='y')
+    # ax.yscale('log')
+    fig.savefig(os.path.join(c.io.output_dir, 'fnat_mean.png'), dpi=250)
+    print()
+    exit()
+
+    if 'Qf' in keys:
+        Qf = pd.concat(Qf, axis=1)
+        Qf.columns = channels.station
 
     data = np.array(data)
 
@@ -73,12 +91,14 @@ def main():
     avg = pd.DataFrame(np.array(avg).T, index=t, columns=keys)
     std = pd.DataFrame(np.array(std).T, index=t, columns=keys)
 
-    avg.drop(axis=1, labels='Qf', inplace=True)
-    std.drop(axis=1, labels='Qf', inplace=True)
+    if 'Qf' in keys:
+        avg.drop(axis=1, labels='Qf', inplace=True)
+        std.drop(axis=1, labels='Qf', inplace=True)
 
     avg.to_csv(os.path.join(c.io.output_dir, 'param_avg.csv'))
     std.to_csv(os.path.join(c.io.output_dir, 'param_std.csv'))
-    Qf.to_csv(os.path.join(c.io.output_dir, 'param_Qf.csv'))
+    if 'Qf' in keys:
+        Qf.to_csv(os.path.join(c.io.output_dir, 'param_Qf.csv'))
 
     mm = 1/25.6
     for key in keys:
