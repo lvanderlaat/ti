@@ -63,7 +63,7 @@ def ssam(
     im = ax.pcolormesh(t, f, Sxx, norm=norm)
 
     ax.set_yscale(yscale)
-    ax.set_ylim(1e-2, f.max())
+    ax.set_ylim(1e-1, f.max())
 
     cax = ax.inset_axes([0.0, 1.05, 1, 0.05], transform=ax.transAxes)
     plt.colorbar(im, cax=cax, orientation='horizontal', label=cbar_label)
@@ -105,8 +105,8 @@ def _ssam(
 
     plt.colorbar(im, cax=cax, label=label)
 
-    # ax.set_yscale('log')
-    ax.set_ylim(0.1, 6.25)
+    ax.set_yscale('log')
+    ax.set_ylim(0.2, 5)
     return
 
 
@@ -178,11 +178,8 @@ def obs_vs_synth(
 
     _ssam(ax2, cax2, t, f, Sxx_obs, qmin, qmax, False, 'turbo', cbar_label)
     _ssam(ax3, cax3, t, f, Sxx_syn, qmin, qmax, False, 'turbo', cbar_label)
-    _ssam(ax4, cax4, t, f, Sxx_err, qmin, qmax, False, 'coolwarm',
+    _ssam(ax4, cax4, t, f, Sxx_err, qmin, qmax, True, 'coolwarm',
           cbar_label_diff, centered=True)
-
-    for ax in [ax2, ax3, ax4]:
-        ax.set_yscale('log')
     return fig
 
 

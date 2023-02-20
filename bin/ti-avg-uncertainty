@@ -61,7 +61,11 @@ def main():
         fig = ti.plot.map(key, _data, channels, lognorm=lognorm)
         fig.savefig(os.path.join(c.io.output_dir, f'map_{key}.png'), dpi=250)
 
-    df = pd.DataFrame(data).describe(percentiles=[])
+    df = pd.DataFrame(data)
+    p = ti.parameters.as_dict()
+    for column in df.columns:
+        df[column] = df[column] * p[column]['conversion']
+    df = df.describe(percentiles=[])
     df = df.drop(columns='Qf')
     df.columns = [
         ti.parameters.get_parameter_label(key) for key in keys if key != 'Qf'
