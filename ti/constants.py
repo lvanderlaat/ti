@@ -1,1 +1,1 @@
-log_params = ['kappa', 'phi', 'Qf', 'D', 'N', 'Pex']
+log_params = ['kappa', 'phi', 'Qf', 'D', 'N']
