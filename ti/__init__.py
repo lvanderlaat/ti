@@ -12,8 +12,10 @@ from . import filt
 from . import model
 from . import montecarlo
 from . import moo
+from . import multichromatic
 from . import obspy2numpy
 from . import parameters
+from . import peak
 from . import plot
 from . import optimization
 from . import synth

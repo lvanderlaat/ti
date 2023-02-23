@@ -1,5 +1,5 @@
 io:
-    output_dir: /home/laat/tmp/1st_peak
+    output_dir: /Users/laat/tmp/
     overwrite: True
 max_workers: 36
 source:
@@ -19,8 +19,8 @@ window:
     overlap: 0.0
     pad    : 0.05
 test:
-    time: '2018-05-12T02:00:00'
-    # time: '2018-05-19T00:00:00'
+    # time: '2018-05-12T02:00:00'
+    time: '2018-05-19T00:00:00'
 uncertainty:
     n: 1008
 optimize:
@@ -28,7 +28,7 @@ optimize:
     filter     : [2, 0.3] # Butterworth order and normalized frequency
     # filter     : [2, 0.9] # Butterworth order and normalized frequency
     # obs_folder : /home/laat/tmp/1st_peak/SSAM
-    obs_folder : /home/laat/tmp/30s/SSAM
+    obs_folder : "/Users/laat/Dropbox (University of Michigan)/paper/dat/POROUS/SSAM"
     n_synth    : 2
     fnat_range: [0.3, 2]
 moo:
@@ -40,7 +40,7 @@ moo:
     pm:
         prob: 1
         eta: 1
-    n_gen: 40
+    n_gen: 100
     eliminate_duplicate: True
     n_partitions: 8 # Only for multiple-station
 model:
@@ -49,7 +49,7 @@ model:
     xs       : 523800 # Cartesian easting [m]
     ys       : 63550 # Cartesian northing [m]
     zs       : 0 # Elevation [m]
-    N        : 400 # number of mass impulses
+    N        : [10, 1000] # number of mass impulses
     mu_g     : 1.e-5 # gas viscosity [Pa s]
     T        : 1100 # gas temperature [K]
     M        : 18.e-3 # molecular weight of gas (water vapor) [kg/mol]
@@ -58,14 +58,20 @@ model:
     R        : 150 # conduit radius [m]
     S        : null # conduit section [m^2]
     D        : [0.001, 1] # gas pocket thickness [m]
-    L        : 150 # thickness of the cap [m]
-    # L        : [1, 1000] # thickness of the cap [m]
+    L        : 100 # thickness of the cap [m]
+    # L        : [1, 200] # thickness of the cap [m]
+    # kappa    : [1.e-9, 1.e-6] # permeability of the cap [m^2]
     kappa    : 1.e-7 # permeability of the cap [m^2]
     phi      : 0.05e-2 # porosity of the cap [0-1]
-    # Pex      : 101325 # external pressure [Pa]
+    # phi      : [0.001e-2, 1.e-2] # porosity of the cap [0-1]
     Pex      : 2.e+7 # external pressure [Pa]
     rho_s    : 2800 # density of the medium of propagation [kg/m^3]
     Qf       : [1, 150] # quality factor
 post:
     n: 1.e+4 # Number of bootstrapping samples
     window: 1D # Moving window length
+multi:
+    delta: 0.025
+    sigma: 3
+    n_peaks: 5
+    perc_diff_max: 5

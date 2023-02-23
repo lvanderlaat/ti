@@ -618,5 +618,22 @@ def map(key, data, stations, lognorm=False, cmap='turbo'):
     return fig
 
 
+def optimized_spectrum_multi(f, Sx_obs, Sx_syn, fn, delta):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    for i, _fn in enumerate(fn):
+        ax.axvspan(_fn - delta, _fn + delta, alpha=0.1)
+        ax.axvline(_fn, lw=0.5, ls='--')
+    ax.plot(f, Sx_obs, alpha=0.7, lw=2, c='k', label='Observed')
+    ax.plot(f, Sx_syn, c='r', lw=2, alpha=0.7, label='Synthetic')
+    ax.set_xscale('log')
+    # ax.set_yscale('log')
+    ax.set_xlim(0.1, 6.25)
+    ax.set_xlabel('Frequency [Hz]')
+    ax.set_ylabel('Ground velocity [m/s]')
+    ax.legend()
+    return fig
+
+
 if __name__ == '__main__':
     pass

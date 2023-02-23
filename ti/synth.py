@@ -36,6 +36,23 @@ def synthetize(param):
     return Sxx_syn, fnat
 
 
+def synthetize_wave(param):
+    # Synthetize
+    dPP0, st, A_p, Sxx, fnat = ti.model.synthetize(**param)
+
+    # Ground velocity spectrum
+    V = np.gradient(st, 1/2/param['max_freq'], axis=-1)
+
+    # Filter waveform
+    for i, tr in enumerate(V):
+        tr *= tukey(tr.shape[-1], alpha=0.05)
+        V[i] = lowpass(tr, 6, 2*param['max_freq'])
+
+    # Compute spectrum
+    Sxx_syn = np.abs(rfft(V))
+    return Sxx_syn, fnat, V
+
+
 def synthetize_avg(param, n=10):
     return np.array([synthetize(param)[0] for _ in range(n)]).mean(axis=0)
 
