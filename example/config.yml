@@ -1,15 +1,17 @@
 io:
     output_dir: /Users/laat/tmp/
     overwrite: True
-max_workers: 36
+max_workers: 8
 source:
     wfs_dir        : /nfs/turbo/lsa-zspica/data/Halema/RAW/wfs/
     inventory_file : /nfs/turbo/lsa-zspica/work/laat/Halema/paper/inventory.xml
     channels_csv   : ./example/channels.csv
-    starttime      : '2018-05-05 12:00'
-    endtime        : '2018-05-27 16:00'
-    # starttime      : '2018-05-12 00:00'
-    # endtime        : '2018-05-12 12:00'
+    # starttime      : '2018-05-05 12:00'
+    # endtime        : '2018-05-27 16:00'
+    # starttime      : '2018-05-17 00:00'
+    # endtime        : '2018-05-27 16:00'
+    starttime      : '2018-05-20 00:00'
+    endtime        : '2018-05-20 03:00'
     sampling_rate  : 100.
 preprocess:
     freqmin: 0.38
@@ -54,24 +56,23 @@ model:
     T        : 1100 # gas temperature [K]
     M        : 18.e-3 # molecular weight of gas (water vapor) [kg/mol]
     Rg       : 8.3145 # ideal gas constant [J/K/mol]
-    Q        : [0.1, 2200] # mean gas flux [kg/s]
-    R        : 150 # conduit radius [m]
+    Q        : [1, 2200] # mean gas flux [kg/s]
+    # R        : 150 # conduit radius [m]
+    R        : [1, 200] # conduit radius [m]
     S        : null # conduit section [m^2]
     D        : [0.001, 1] # gas pocket thickness [m]
-    L        : 100 # thickness of the cap [m]
-    # L        : [1, 200] # thickness of the cap [m]
-    # kappa    : [1.e-9, 1.e-6] # permeability of the cap [m^2]
-    kappa    : 1.e-7 # permeability of the cap [m^2]
-    phi      : 0.05e-2 # porosity of the cap [0-1]
-    # phi      : [0.001e-2, 1.e-2] # porosity of the cap [0-1]
-    Pex      : 2.e+7 # external pressure [Pa]
+    # L        : 100 # thickness of the cap [m]
+    L        : [1, 200] # thickness of the cap [m]
+    # kappa    : 1.e-7 # permeability of the cap [m^2]
+    kappa    : [1.e-10, 1.e-7] # permeability of the cap [m^2]
+    # phi      : 0.05e-2 # porosity of the cap [0-1]
+    phi      : [0.001e-2, 1.e-2] # porosity of the cap [0-1]
+    # Pex      : 2.e+7 # external pressure [Pa]
+    Pex      : [1.e+6, 3.e+7]  # external pressure [Pa]
     rho_s    : 2800 # density of the medium of propagation [kg/m^3]
     Qf       : [1, 150] # quality factor
-post:
-    n: 1.e+4 # Number of bootstrapping samples
-    window: 1D # Moving window length
+    n        : 5 # Number of sub-resonators
 multi:
     delta: 0.025
-    sigma: 3
-    n_peaks: 5
-    perc_diff_max: 5
+    sigma: 1
+    perc_diff_max: 1

@@ -87,7 +87,7 @@ def ssam(
 def _ssam(
     ax, cax, t, f, Sxx, qmin, qmax, lognorm, cmap, label, centered=False
 ):
-    vmin, vmax = np.quantile(Sxx, qmin), np.quantile(Sxx, qmax)
+    vmin, vmax = np.nanquantile(Sxx, qmin), np.nanquantile(Sxx, qmax)
     if centered:
         vabs = max(abs(vmin), abs(vmax))
         vmin = -vabs
@@ -121,7 +121,7 @@ def _rsam(ax, t, rsam, c, label, window='6H'):
 
 def obs_vs_synth(
     t, f, Sxx_obs, Sxx_syn, measurement='velocity',
-    lognorm=False, qmin=0.005, qmax=0.995, normalize=True
+    lognorm=False, qmin=0.005, qmax=1, normalize=True
 ):
     unit = UNIT[measurement]
     label = f'Ground {measurement} [{unit}]'
@@ -178,8 +178,11 @@ def obs_vs_synth(
 
     _ssam(ax2, cax2, t, f, Sxx_obs, qmin, qmax, False, 'turbo', cbar_label)
     _ssam(ax3, cax3, t, f, Sxx_syn, qmin, qmax, False, 'turbo', cbar_label)
-    _ssam(ax4, cax4, t, f, Sxx_err, qmin, qmax, True, 'coolwarm',
-          cbar_label_diff, centered=True)
+    try:
+        _ssam(ax4, cax4, t, f, Sxx_err, qmin, qmax, True, 'coolwarm',
+              cbar_label_diff, centered=True)
+    except Exception as e:
+        print(e)
     return fig
 
 

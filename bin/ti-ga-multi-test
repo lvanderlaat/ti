@@ -19,9 +19,7 @@ import xarray as xr
 from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
-from pymoo.optimize import minimize
 from pymoo.termination import get_termination
-from scipy import signal
 from scipy.fft import rfft
 from scipy.ndimage import gaussian_filter
 
@@ -66,8 +64,6 @@ def main():
     obs = obs.where(obs.station.isin(channels.station), drop=True)
     obs = obs.sel(t=c.test.time, method='nearest')
 
-    b, a = signal.butter(c.optimize.filter[0], c.optimize.filter[1], 'low')
-
     # Algorithm
     algorithm = GA(
         pop_size=c.moo.pop_size,
@@ -89,72 +85,23 @@ def main():
 
     Sx_obs = obs.transpose('station', 'f').values[0]
 
-    df, df_min, df_max = ti.peak.extrema(Sx_obs)
-    df_max.sort_values(by='a', inplace=True, ascending=False)
-    df_max = df_max[:c.multi.n_peaks]
-
     t0 = time.time()
-    fn, opt = [], []
-    for i, row in df_max.iterrows():
-        ic = df.idx[i]
-        il = df.idx[i - 1]
-        ir = df.idx[i + 1]
+    opt = ti.multichromatic.invert(
+        0, obs.f.values, Sx_obs, c.multi.delta, param, keys,
+        c.multi.sigma, algorithm, termination, True
+    )
+    t1 = time.time()
+    print(f'Optimization time: {t1-t0:.1f} s')
 
-        _fn = obs.f.values[ic]
-
-        fnat_range = [_fn - c.multi.delta, _fn + c.multi.delta]
-
-        # Peak prominence
-        perc_diff = 100 * np.abs(
-            Sx_obs[ic] - max(Sx_obs[il], Sx_obs[ir])
-        )/Sx_obs[ic]
-
-        if perc_diff < 10:
-            continue
-
-        y = Sx_obs.copy()
-        mask = np.ones(len(y), np.bool)
-        mask[il:ir] = False
-        y[mask] = 0
-
-        problem = ti.multichromatic.Problem(
-            Sx_obs=y, f=obs.f.values, param=param, keys=keys,
-            sigma=c.multi.sigma, fnat_range=fnat_range,
-            perc_diff_max=c.multi.perc_diff_max
-        )
-
-        result = minimize(
-            problem, algorithm, termination, seed=1, save_history=False,
-            verbose=True,
-        )
-        try:
-            opt.append(ti.multichromatic.var_to_dict(param, keys, result.X))
-            fn.append(_fn)
-        except Exception as e:
-            print(e)
-            continue
-
-    df = pd.DataFrame(opt)
-    df['fn'] = fn
-    df.sort_values(by='fn', inplace=True)
-    df.to_csv(os.path.join(folderpath, 'param.csv'))
-
-    V = []
-    for i, _opt in enumerate(opt):
-        _, _, _V = ti.synth.synthetize_wave(_opt)
-        V.append(_V[0])
-    V = np.array(V).sum(axis=0)
-    Sx_syn = np.abs(rfft(V))
-    Sx_syn = gaussian_filter(Sx_syn, sigma=0.5)
+    Sx_syn, fnat = ti.model_multi.synthetize(**opt)
+    Sx_syn = Sx_syn[0]
+    Sx_syn = gaussian_filter(Sx_syn, sigma=c.multi.sigma)
 
     fig = ti.plot.optimized_spectrum_multi(
-        obs.f.values, Sx_obs, Sx_syn, fn, c.multi.delta
+        obs.f.values, Sx_obs, Sx_syn, fnat, c.multi.delta
     )
     fig.savefig(os.path.join(folderpath, 'opt_spec.png'), dpi=250)
 
-    t1 = time.time()
-
-    print(f'Optimization time: {t1-t0:.1f} s')
     return
 
 

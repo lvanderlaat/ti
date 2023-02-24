@@ -10,6 +10,7 @@ from . import config
 from . import constants
 from . import filt
 from . import model
+from . import model_multi
 from . import montecarlo
 from . import moo
 from . import multichromatic
