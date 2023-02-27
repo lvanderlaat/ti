@@ -108,18 +108,29 @@ def main():
     with Pool(c.max_workers) as pool:
         opts = pool.starmap(ti.multichromatic.invert, args_parallel)
 
-    with open(os.path.join(folderpath, 'params.pkl'), 'wb') as _f:
-        pickle.dump(opts, _f)
-
-    Sxx_syn = []
+    Sxx_syn, opts_out = [], []
     for i, opt in enumerate(opts):
-        # _t = str(obs.t.values[i]).split('.')[0].replace(':', '')
         if opt is None:
             Sx_syn = np.zeros(obs.f.values.size)
         else:
             Sx_syn, fnat = ti.model_multi.synthetize(**opt)
             Sx_syn = Sx_syn[0]
+
+            for j in range(opt['n']):
+                opt_out = dict(datetime=obs.t.values[i], fnat=fnat[j])
+                for key in opt.keys():
+                    if isinstance(opt[key], np.ndarray):
+                        if len(opt[key]) == opt['n']:
+                            opt_out[key] = opt[key][j]
+                        else:
+                            opt_out[key] = opt[key][0]
+                    else:
+                        opt_out[key] = opt[key]
+                opts_out.append(opt_out)
+
         Sxx_syn.append(Sx_syn)
+    df = pd.DataFrame(opts_out)
+    df.to_csv(os.path.join(folderpath, 'params.csv'))
 
     Sxx_syn = np.array(Sxx_syn)
 

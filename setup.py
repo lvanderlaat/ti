@@ -25,6 +25,8 @@ setup(
         'bin/ti-ga',
         'bin/ti-ga-test',
         'bin/ti-ga-uncertainty',
+        'bin/ti-ga-multi',
+        'bin/ti-ga-multi-test',
         'bin/ti-mc',
         'bin/ti-mc-test',
         'bin/ti-unsga3',

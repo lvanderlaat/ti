@@ -122,13 +122,15 @@ def invert(
     df, df_min, df_max = ti.peak.extrema(Sx_obs)
     df_max.sort_values(by='a', inplace=True, ascending=False)
 
-    prominences, _, _ = peak_prominences(Sx_obs/Sx_obs.max()*100, df_max.idx)
+    prominences, _, _ = peak_prominences(100*Sx_obs/Sx_obs.max(), df_max.idx)
     df_max['prominence'] = prominences
     df_max.sort_values(by='prominence', inplace=True, ascending=False)
     df_max = df_max[:param['n']]
 
     if df_max.prominence.max() > prominence_min:
         df_max = df_max[df_max.prominence > prominence_min]
+    else:
+        df_max = df_max[df_max.prominence.max() == df_max.prominence]
 
     Sx_obs = gaussian_filter(Sx_obs, sigma=sigma)
 

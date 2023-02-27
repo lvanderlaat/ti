@@ -92,6 +92,9 @@ def main():
     )
     t1 = time.time()
     print(f'Optimization time: {t1-t0:.1f} s')
+    print(opt)
+
+    assert opt is not None
 
     Sx_syn, fnat = ti.model_multi.synthetize(**opt)
     Sx_syn = Sx_syn[0]
