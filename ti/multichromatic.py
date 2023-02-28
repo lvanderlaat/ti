@@ -50,7 +50,7 @@ class Problem(ElementwiseProblem):
         super().__init__(
             n_var=self.n_var,
             n_obj=1,
-            n_ieq_constr=2*self.n_peaks,
+            n_ieq_constr=2*self.n_peaks + 1,
             # n_ieq_constr=0,
             xl=self.xl,
             xu=self.xu,
@@ -93,6 +93,7 @@ class Problem(ElementwiseProblem):
 
     def _evaluate(self, x, out, *args, **kwargs):
         param = self.var_to_dict(x)
+
         Sx_syn, fnat = ti.model_multi.synthetize(**param)
         Sx_syn = Sx_syn[0]
         Sx_syn = gaussian_filter(Sx_syn, sigma=self.sigma)
@@ -103,6 +104,7 @@ class Problem(ElementwiseProblem):
         for i in range(self.n_peaks):
             out['G'].append(self.fnat_range[0][i] - fnat[i])
             out['G'].append(fnat[i] - self.fnat_range[1][i])
+        out['G'].append(param['Q'].sum() - 3000)
         return
 
     def var_to_dict(self, x):
@@ -138,6 +140,8 @@ def invert(
 
     param['n'] = len(df_max)
 
+    df_max['fnat'] = fnat
+    df_max.sort_values(by='fnat', inplace=True)
     fnat_range = [fnat - delta, fnat + delta]
 
     problem = ti.multichromatic.Problem(
