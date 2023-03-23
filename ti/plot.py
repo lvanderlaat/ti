@@ -17,6 +17,7 @@ from matplotlib import colors
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.cm import ScalarMappable
+from scipy.ndimage import gaussian_filter
 
 from scipy.stats import mode
 
@@ -37,10 +38,11 @@ def grid(n):
 
 def ssam(
     t, f, Sxx, lognorm=False, qmin=0.025, qmax=0.995, yscale='log',
-    smooth_window='6H', normalize=True
+    smooth_window='1H', normalize=False
 ):
-    # Sxx = Sxx/Sxx.max(axis=0)
     rsam = Sxx.mean(axis=0)
+
+    Sxx = gaussian_filter(Sxx, sigma=1)
 
     label = 'Ground velocity [m/s]'
     cbar_label = label
@@ -50,7 +52,7 @@ def ssam(
         cbar_label = 'Normalized amplitude'
 
     # Figure
-    fig, ax = plt.subplots(figsize=(190*mm, 100*mm))
+    fig, ax = plt.subplots(figsize=(190*mm, 150*mm))
     ax.set_ylabel('Frequency [Hz]')
 
     vmin, vmax = np.quantile(Sxx, qmin), np.quantile(Sxx, qmax)
@@ -63,7 +65,7 @@ def ssam(
     im = ax.pcolormesh(t, f, Sxx, norm=norm)
 
     ax.set_yscale(yscale)
-    ax.set_ylim(1e-1, f.max())
+    ax.set_ylim(2e-1, 6.25)
 
     cax = ax.inset_axes([0.0, 1.05, 1, 0.05], transform=ax.transAxes)
     plt.colorbar(im, cax=cax, orientation='horizontal', label=cbar_label)
@@ -72,7 +74,7 @@ def ssam(
 
     # Pseudo-RSAM
     ax1 = ax.twinx()
-    ax1.scatter(t, rsam, s=2, c='w')
+    # ax1.scatter(t, rsam, s=2, c='w')
     _rsam = pd.Series(rsam, index=t)
     _rsam = _rsam.rolling(smooth_window, center=True).median()
     ax1.plot(t, _rsam, lw=2, c='w')
