@@ -11,10 +11,10 @@ import argparse
 import datetime
 import json
 import os
+import re
 
 # Other dependencies
 import pandas as pd
-import numpy as np
 
 # Local files
 
@@ -74,6 +74,43 @@ def create_folder(output_dir, name, overwrite):
 def write_conf(c, folderpath):
     with open(os.path.join(folderpath, 'config.json'), 'w') as f:
         json.dump(c, f, indent=4, default=str)
+
+
+def inventory_to_dataframe(inventory, stations='.', channels='.'):
+    stations_regex = ''
+    for i, code in enumerate(stations):
+        stations_regex += f'({code})'
+        if i < len(stations) - 1:
+            stations_regex += '|'
+
+    channels_regex = ''
+    for i, code in enumerate(channels):
+        channels_regex += f'({code})'
+        if i < len(channels) - 1:
+            channels_regex += '|'
+
+    data = []
+    for network in inventory:
+        for station in network:
+            if not re.match(stations_regex, station.code):
+                continue
+            for channel in station.channels:
+                if not re.match(channels_regex, channel.code):
+                    continue
+                data.append(dict(
+                    network=network.code,
+                    station=station.code,
+                    channel=channel.code,
+                    longitude=station.longitude,
+                    latitude=station.latitude,
+                    z=station.elevation,
+                ))
+    df = pd.DataFrame(data)
+
+    df.sort_values(by=['station', 'channel'], inplace=True)
+
+    df.drop_duplicates(inplace=True)
+    return df
 
 
 if __name__ == '__main__':

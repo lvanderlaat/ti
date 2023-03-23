@@ -18,25 +18,26 @@ Clone the code, then
     conda install -c conda-forge xarray dask netCDF4 bottleneck
     conda install -c numba numba
     conda install scikit-image
+    conda install -c conda-forge pyproj
     pip install -U pymoo
     pip install -e .
 
 # Run the example
 
+## Get the data
+
+    python ./example/get_data.py
+
 ## Extract the observations
 
-    ti-extract example/config.yml
-
-## Monte Carlo inversion
-
-    ti-mc-test example/config.yml
+    ti-extract ./example/config.yml
 
 ## Genetic Algorith
 
 Test:
 
-    ti-ga-test example/config.yml UWE
+    ti-ga-multi-test ./example/config.yml UWE
 
 Run all:
 
-    ti-ga example/config.yml UWE
+    ti-ga-multi ./example/config.yml UWE

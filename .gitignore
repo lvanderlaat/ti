@@ -1,3 +1,4 @@
+*.DS_Store
 bin/ti-ga-multi-test_old
 bin/ti-ga-multi_old
 ti/multichromatic_old.py
@@ -5,6 +6,8 @@ borrar.png
 natural_frequency.py
 run_loop.sh
 example/channels.csv
+./example/stations/*
+./example/MSEED/*
 
 add.sh
 example/channels_unsga3.csv

@@ -17,9 +17,6 @@ from matplotlib import colors
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.cm import ScalarMappable
-from scipy.ndimage import gaussian_filter
-
-from scipy.stats import mode
 
 
 __author__ = 'Leonardo van der Laat'
@@ -38,11 +35,9 @@ def grid(n):
 
 def ssam(
     t, f, Sxx, lognorm=False, qmin=0.025, qmax=0.995, yscale='log',
-    smooth_window='1H', normalize=False
+    smooth_window='1H', normalize=True
 ):
     rsam = Sxx.mean(axis=0)
-
-    Sxx = gaussian_filter(Sxx, sigma=1)
 
     label = 'Ground velocity [m/s]'
     cbar_label = label
@@ -74,7 +69,7 @@ def ssam(
 
     # Pseudo-RSAM
     ax1 = ax.twinx()
-    # ax1.scatter(t, rsam, s=2, c='w')
+    ax1.scatter(t, rsam, s=2, c='w')
     _rsam = pd.Series(rsam, index=t)
     _rsam = _rsam.rolling(smooth_window, center=True).median()
     ax1.plot(t, _rsam, lw=2, c='w')
