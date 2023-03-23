@@ -6,8 +6,11 @@ borrar.png
 natural_frequency.py
 run_loop.sh
 example/channels.csv
-./example/stations/*
-./example/MSEED/*
+example/stations/*
+example/MSEED*
+example/SSAM*
+example/GA*
+example/inventory.xml
 
 add.sh
 example/channels_unsga3.csv

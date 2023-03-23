@@ -1,7 +1,3 @@
-# TODO
-* Add script for inventory and channel `csv` file.
-* Add script `mass_download`
-
 # Tremor inversion 
 
 This repository contains the code used in [van der Laat *et al.* (in prep.)]() to invert tremor using the forward model from Girona *et al.* (2019) 
