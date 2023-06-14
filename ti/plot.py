@@ -98,6 +98,9 @@ def _ssam(
     else:
         norm = colors.Normalize(vmin=vmin, vmax=vmax)
 
+    if np.isnan(vmin) and np.isnan(vmax):
+        return
+
     im = ax.pcolormesh(t, f, Sxx, norm=norm, cmap=cmap)
 
     plt.colorbar(im, cax=cax, label=label)

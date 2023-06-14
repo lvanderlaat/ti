@@ -344,36 +344,36 @@ def get_fnat_params():
 if __name__ == '__main__':
     param = dict(
         # Simulation parameters
-        tau=20,         # seconds of simulation
-        max_freq=25,    # maximum frequency to be reached in the simulation
+        tau=30,         # seconds of simulation
+        max_freq=12.5,    # maximum frequency to be reached in the simulation
         # Source location
         xs=0,
         ys=0,
         zs=-1e3,
         # Gas properties
-        N=1000,         # number of mass impulses in tau seconds
+        N=30,         # number of mass impulses in tau seconds
         mu_g=1e-5,      # gas viscosity
         T=1000+273.15,  # gas temperature
         M=0.018,        # molecular weight of gas (water vapor)
         Rg=8.3145,      # ideal gas constant
-        Q=2,            # mean gas flux
+        Q=200,            # mean gas flux
         # Conduit geometry
-        R=25,           # conduit radius
+        R=40,           # conduit radius
         S=None,         # conduit section
         # Gas pocket
-        D=1e-3,         # gas pocket thickness
+        D=1e-1,         # gas pocket thickness
         # Cap properties
-        L=20,           # thickness of the cap
-        kappa=1e-8,     # permeability of the cap
+        L=30,           # thickness of the cap
+        kappa=1e-10,     # permeability of the cap
         phi=1e-4,       # porosity of the cap
         # External pressure
-        Pex=101325,     # external pressure
+        Pex=21e6,     # external pressure
         # Path and receivers
-        xr=[0, 2e3, 5e3],    # Stations x-coordinate
-        yr=[0, 0, 0],         # Stations x-coordinate
-        zr=[0, 0, 0],         # Stations x-coordinate
-        Qf=[10, 20, 50],   # Quality factors for each station (list or number)
-        rho_s=3000,       # density of the medium of propagation
+        xr=[0],    # Stations x-coordinate
+        yr=[0],         # Stations x-coordinate
+        zr=[0],         # Stations x-coordinate
+        Qf=[50],   # Quality factors for each station (list or number)
+        rho_s=2800,       # density of the medium of propagation
     )
     dPP0, st, A_p, Sxx, fnat = synthetize(**param)
 

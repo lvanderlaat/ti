@@ -8,7 +8,6 @@
 # Python Standard Library
 
 # Other dependencies
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import ti
@@ -23,6 +22,9 @@ from scipy.signal import peak_prominences
 
 __author__ = 'Leonardo van der Laat'
 __email__ = 'laat@umich.edu'
+
+
+pd.options.mode.chained_assignment = None
 
 
 class Problem(ElementwiseProblem):
@@ -51,7 +53,6 @@ class Problem(ElementwiseProblem):
             n_var=self.n_var,
             n_obj=1,
             n_ieq_constr=2*self.n_peaks + 1,
-            # n_ieq_constr=0,
             xl=self.xl,
             xu=self.xu,
             **kwargs,
@@ -104,7 +105,7 @@ class Problem(ElementwiseProblem):
         for i in range(self.n_peaks):
             out['G'].append(self.fnat_range[0][i] - fnat[i])
             out['G'].append(fnat[i] - self.fnat_range[1][i])
-        out['G'].append(param['Q'].sum() - 3000)
+        out['G'].append(param['Q'].sum() - 3000)  # TODO set this user param
         return
 
     def var_to_dict(self, x):
@@ -116,34 +117,42 @@ class Problem(ElementwiseProblem):
         return param
 
 
-def invert(
-    i, f, Sx_obs, delta, param, keys, sigma, algorithm,
-    termination, verbose, prominence_min=20
-):
-    print(i)
+def get_peaks(Sx_obs, n, prominence_min=20):
+    # Get peaks
     df, df_min, df_max = ti.peak.extrema(Sx_obs)
     df_max.sort_values(by='a', inplace=True, ascending=False)
 
-    prominences, _, _ = peak_prominences(100*Sx_obs/Sx_obs.max(), df_max.idx)
-    df_max['prominence'] = prominences
-    df_max.sort_values(by='prominence', inplace=True, ascending=False)
-    df_max = df_max[:param['n']]
+    # Get peaks prominences
+    df_max['prominence'], _, _ = peak_prominences(
+        100*Sx_obs/Sx_obs.max(), df_max.idx
+    )
+    # Sort by prominence
+    df_max = df_max.sort_values(by='prominence', ascending=False)[:n]
 
+    # Filter by prominence
     if df_max.prominence.max() > prominence_min:
         df_max = df_max[df_max.prominence > prominence_min]
     else:
         df_max = df_max[df_max.prominence.max() == df_max.prominence]
+    return df_max
 
-    Sx_obs = gaussian_filter(Sx_obs, sigma=sigma)
 
-    fnat = f[df_max.idx]
+def invert(
+    i, f, Sx_obs, delta, param, keys, sigma, algorithm, termination, verbose,
+):
+    df_max = get_peaks(Sx_obs, param['n'])
 
+    # Set number of resonators
     param['n'] = len(df_max)
 
-    df_max['fnat'] = fnat
-    df_max.sort_values(by='fnat', inplace=True)
+    # Set range of natural frequency
+    fnat = f[df_max.idx]
     fnat_range = [fnat - delta, fnat + delta]
 
+    # Smooth observation
+    Sx_obs = gaussian_filter(Sx_obs, sigma=sigma)
+
+    # Initialize problem
     problem = ti.multichromatic.Problem(
         Sx_obs=Sx_obs,
         f=f,
@@ -152,10 +161,12 @@ def invert(
         fnat_range=fnat_range,
         sigma=sigma,
     )
+    # Invert
     result = minimize(
         problem, algorithm, termination, seed=1, save_history=False,
         verbose=verbose,
     )
+
     if result.X is None:
         return None
     else:

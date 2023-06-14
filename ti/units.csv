@@ -14,8 +14,8 @@ R,Conduit radius,$R$,m,,1,False,",",int
 S,Conduit section area,$S$,m$^2$,,1,False,",",int
 D,Gas pocket thickness,$D$,m,,1,True,.1f,float
 L,Cap thickness,$L$,m,,1,False,",",int
-kappa,Cap pearmeability,$\kappa$,m$^2$,,1,True,.1g,float
+kappa,Cap permeability,$\kappa$,m$^2$,,1,True,.1g,float
 phi,Cap porosity,$\varphi$,\%,0-1,100.0,True,.2f,float
-Pex,External pressure,$P_{ex}$,MPa,Pa,1e-6,False,".0g",float
+Pex,External pressure,$P_{ex}$,MPa,Pa,1e-6,False,".1f",float
 rho_s,Medium density,$\rho_s$,kg/m$^3$,,1,False,",",int
 Qf,Quality factor,$Q_f$," ",,1,True,",",int

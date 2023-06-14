@@ -26,6 +26,8 @@ setup(
         'bin/ti-ga-test',
         'bin/ti-ga-uncertainty',
         'bin/ti-ga-multi',
+        'bin/ti-ga-multi-unc',
+        'bin/ti-ga-multi-unc-per-day',
         'bin/ti-ga-multi-test',
         'bin/ti-mc',
         'bin/ti-mc-test',

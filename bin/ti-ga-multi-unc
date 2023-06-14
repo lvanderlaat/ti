@@ -23,6 +23,7 @@ from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.termination import get_termination
 from scipy.ndimage import gaussian_filter
+from pymoo.optimize import minimize
 
 
 # Local files
@@ -37,10 +38,21 @@ def parse_args():
     )
     parser.add_argument('configfile', help='Configuration file path')
     parser.add_argument('station', help='Station')
-    parser.add_argument('--L', type=float, help='Cap thickness')
-    parser.add_argument('--kappa', type=int, help='Cap permeability')
-    parser.add_argument('--phi', type=int, help='Cap porosity')
     return parser.parse_args()
+
+
+def invert(i, problem, algorithm, termination):
+    # Optimize
+    result = minimize(
+        problem, algorithm, termination,
+        seed=i,  # Change the seed every time to get some randomness
+        save_history=False, verbose=False,
+    )
+
+    if result.X is None:
+        return None
+    else:
+        return problem.var_to_dict(result.X)
 
 
 def main():
@@ -48,21 +60,9 @@ def main():
     args = parse_args()
     c = ti.config.read(args.configfile)
 
-    foldername = f'GA_MULTI_{args.station}'
-
-    if args.L is not None:
-        c.model.L = args.L
-        foldername += f'_L_{args.L}'
-    if args.kappa is not None:
-        c.model.kappa = 10**args.kappa
-        foldername += f'_kappa_{args.kappa}'
-    if args.phi is not None:
-        c.model.phi = 10**args.phi
-        foldername += f'_phi_{args.phi}'
-
     # Output
     folderpath = ti.utils.create_folder(
-        c.io.output_dir, foldername, c.io.overwrite
+        c.io.output_dir, f'GA_MULTI_{args.station}', c.io.overwrite
     )
     ti.utils.write_conf(c, folderpath)
 
@@ -102,43 +102,90 @@ def main():
     param['yr'] = channels.y.tolist()
     param['zr'] = channels.z.tolist()
 
-    args_parallel = zip(
-        range(obs.t.values.size),
-        repeat(obs.f.values),
-        obs.transpose('t', 'f').data,
-        repeat(c.multi.delta),
-        repeat(param),
-        repeat(keys),
-        repeat(c.multi.sigma),
-        repeat(algorithm),
-        repeat(termination),
-        repeat(False)
-    )
+    f = obs.f.values
+    delta = c.multi.delta
+    sigma = c.multi.sigma
 
-    with Pool(c.max_workers) as pool:
-        opts = pool.starmap(ti.multichromatic.invert, args_parallel)
+    import time
 
     Sxx_syn, opts_out = [], []
-    for i, opt in enumerate(opts):
-        if opt is None:
-            Sx_syn = np.zeros(obs.f.values.size)
-        else:
-            Sx_syn, fnat = ti.model_multi.synthetize(**opt)
-            Sx_syn = Sx_syn[0]
+    for i, Sx_obs in enumerate(obs.transpose('t', 'f').data):
+        print(i)
 
-            for j in range(opt['n']):
-                opt_out = dict(datetime=obs.t.values[i], fnat=fnat[j])
+        t0 = time.time()
+
+        df_max = ti.multichromatic.get_peaks(Sx_obs, param['n'])
+
+        # Set number of resonators
+        param['n'] = len(df_max)
+
+        # Set range of natural frequency
+        fnat = f[df_max.idx]
+        fnat_range = [fnat - delta, fnat + delta]
+
+        # Smooth observation
+        Sx_obs = gaussian_filter(Sx_obs, sigma=sigma)
+
+        # Initialize problem
+        problem = ti.multichromatic.Problem(
+            Sx_obs=Sx_obs,
+            f=f,
+            param=param,
+            keys=keys,
+            fnat_range=fnat_range,
+            sigma=sigma,
+        )
+
+        args_parallel = zip(
+            range(c.uncertainty.n),
+            repeat(problem),
+            repeat(algorithm),
+            repeat(termination),
+        )
+
+        with Pool(c.max_workers) as pool:
+            _opts = pool.starmap(invert, args_parallel)
+
+        # take care the case where no convergence was attained.
+        opts = [opt for opt in _opts if opt is not None]
+
+        if len(opts) < 1:
+            Sx_syn = np.empty(f.size)
+            Sx_syn[:] = np.nan
+            Sxx_syn.append(Sx_syn)
+            continue
+
+        # Get mean for unfixed parameters
+        _param = param.copy()
+        for key in keys:
+            _param[key] = np.mean([opt[key] for opt in opts], axis=0)
+
+        # Synthetize spectrogram with mean parameters
+        Sx_syn, _fnat = ti.model_multi.synthetize(**_param)
+        Sx_syn = Sx_syn[0]
+        Sxx_syn.append(Sx_syn)
+
+        # Format the output parameters
+        for j, opt in enumerate(opts):
+            for k in range(opt['n']):
+                opt_out = dict(
+                    datetime=obs.t.values[i], fnat=fnat[k], iteration=j
+                )
                 for key in opt.keys():
                     if isinstance(opt[key], np.ndarray):
                         if len(opt[key]) == opt['n']:
-                            opt_out[key] = opt[key][j]
+                            opt_out[key] = opt[key][k]
                         else:
                             opt_out[key] = opt[key][0]
                     else:
                         opt_out[key] = opt[key]
                 opts_out.append(opt_out)
 
-        Sxx_syn.append(Sx_syn)
+        t1 = time.time()
+        exec_time = t1 - t0
+        print(f'Time to process {c.uncertainty.n}: {exec_time:.0f} s')
+
+    # Write output spectrogram and parameters
     df = pd.DataFrame(opts_out)
     df.to_csv(os.path.join(folderpath, 'params.csv'))
 
@@ -151,6 +198,7 @@ def main():
     )
     syn.to_netcdf(os.path.join(folderpath, 'data.nc'))
 
+    # Final plot
     Sxx_obs = gaussian_filter(obs, sigma=c.multi.sigma)
     Sxx_syn = gaussian_filter(Sxx_syn, sigma=c.multi.sigma)
 

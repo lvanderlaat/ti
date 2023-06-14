@@ -84,8 +84,7 @@ def to_latex(c):
     df['Description'] = df.description
     df['Unit'] = df.unit
     df['Value'] = values
-    df['Reference'] = ' '
-    df = df['Parameter Description Value Unit Reference'.split()]
+    df = df['Parameter Description Value Unit'.split()]
 
     latex_code = df.style.hide(axis='index').to_latex(
         position='!htb',
