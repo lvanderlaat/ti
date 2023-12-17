@@ -18,6 +18,7 @@ from . import obspy2numpy
 from . import parameters
 from . import peak
 from . import plot
+from . import projection
 from . import optimization
 from . import synth
 from . import target

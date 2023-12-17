@@ -31,6 +31,10 @@ def work(
     filenames, wfs_dir, freqmin, freqmax, inventory, decimation_factor,
     window_length, overlap, window_pad, n_subwindows, npts, stachas
 ):
+    print('Processing:')
+    for filename in filenames:
+        print('\t', filename)
+
     n_channels = len(stachas)
 
     # Load data
@@ -110,7 +114,7 @@ def main():
         repeat(c.window.pad), repeat(n_subwindows), repeat(npts),
         repeat(stachas)
     )
-    with Pool(cpu_count()) as pool:
+    with Pool(c.max_workers) as pool:
         results = pool.starmap(work, args_parallel)
     _datetimes, _Sxx = list(map(list, zip(*results)))
 
@@ -138,6 +142,11 @@ def main():
 
     # Figures
     folderfigs = ti.utils.create_folder(folderpath, 'fig', True)
+
+    Sxx = data.sum(axis=0).as_numpy()
+    fig = ti.plot.ssam(data.t.values, data.f, Sxx.T.copy())
+    fig.savefig(os.path.join(folderfigs, 'stack.png'), dpi=250)
+
     for i, row in channels.iterrows():
         Sxx = data.sel(station=row.station).as_numpy()
         fig = ti.plot.ssam(data.t.values, data.f, Sxx.T.copy())
