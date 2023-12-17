@@ -118,7 +118,7 @@ We extract spectrograms.
 We use the following parameters from the configuration file:
 
 | Parameter | Description | Units/format |
-| ========= | ======= | ===== |
+| --------- | ----------- | ------------ |
 | `io.output_dir` | Output directory | |
 | `io.overwrite` | Whether to overwrite old data | |
 | `max_workers` | Number of parallel processes to run | |
