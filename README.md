@@ -145,7 +145,7 @@ This creates a new folder `{output_dir}/SSAM` which contains:
 
 
 | File | Description |
-| ==== | =========== |
+| ---- | ----------- |
 | `config.json` | A copy of the configuration file (we use `json` for done processes, `yml` for new processes) |
 | `data.nc` | a `netCDF` file containing the data |
 | `fig/` | a subfolder with simple figures of the spectrograms, one per station and one stack |
